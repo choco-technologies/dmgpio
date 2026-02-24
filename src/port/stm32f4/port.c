@@ -28,44 +28,45 @@ int dmod_deinit(void)
 }
 
 /* ======================================================================
- *  Weak EXTI ISR stubs – override in application code if needed.
+ *  EXTI ISR handlers registered with the DMOD IRQ dispatcher.
  *
  *  Each handler passes a bitmask of the EXTI lines it services to the
  *  common handler which reads the EXTI PR register and dispatches to the
  *  registered dmgpio interrupt handler.
  * ====================================================================== */
 
-__attribute__((weak)) void EXTI0_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI0_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x0001UL);
 }
 
-__attribute__((weak)) void EXTI1_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI1_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x0002UL);
 }
 
-__attribute__((weak)) void EXTI2_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI2_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x0004UL);
 }
 
-__attribute__((weak)) void EXTI3_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI3_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x0008UL);
 }
 
-__attribute__((weak)) void EXTI4_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI4_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x0010UL);
 }
 
-__attribute__((weak)) void EXTI9_5_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI9_5_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0x03E0UL);
 }
 
-__attribute__((weak)) void EXTI15_10_IRQHandler(void)
+DMOD_IRQ_HANDLER(EXTI15_10_IRQHandler)
 {
     stm32_gpio_exti_irq_handler(0xFC00UL);
 }
+
