@@ -10,22 +10,12 @@
 #define DMGPIO_CONTEXT_MAGIC    0x44475049
 
 /**
- * @brief Maximum number of interrupt handlers that can be registered on one context.
- *
- * Additional handlers beyond this limit are rejected with -ENOMEM.
- * Adjust this compile-time constant if more handlers per context are needed.
- */
-#define DMGPIO_MAX_HANDLERS_PER_CONTEXT  4U
-
-/**
  * @brief DMDRVI context structure
  */
 struct dmdrvi_context
 {
-    uint32_t                    magic;                                          /**< Magic number for validation */
-    dmgpio_config_t             config;                                         /**< GPIO configuration */
-    dmgpio_interrupt_handler_t  handlers[DMGPIO_MAX_HANDLERS_PER_CONTEXT];     /**< Registered user handlers */
-    size_t                      handler_count;                                  /**< Number of registered handlers */
+    uint32_t        magic;  /**< Magic number for validation */
+    dmgpio_config_t config; /**< GPIO configuration */
 };
 
 static int is_valid_context(dmdrvi_context_t context)
@@ -33,23 +23,13 @@ static int is_valid_context(dmdrvi_context_t context)
     return (context != NULL && context->magic == DMGPIO_CONTEXT_MAGIC);
 }
 
-/* ---- Per-context interrupt handler ---- */
-
-/**
- * @brief Port-level interrupt handler registered per context in dmgpio_port.
- *
- * Called by the port layer with @p user_ptr set to the owning context.
- * Filters the interrupt to pins owned by this context and calls all
- * registered user handlers.
- */
-static void dmgpio_ctx_irq_handler(void *user_ptr, dmgpio_port_t port, dmgpio_pins_mask_t pins)
-{
-    dmdrvi_context_t ctx = (dmdrvi_context_t)user_ptr;
-    dmgpio_pins_mask_t matching = (dmgpio_pins_mask_t)(ctx->config.pins & pins);
-    if (matching == 0U) return;
-    for (size_t i = 0; i < ctx->handler_count; i++)
-        ctx->handlers[i](ctx, port, matching);
-}
+/* dmgpio_interrupt_handler_t and dmgpio_port_interrupt_handler_t share the
+ * same calling convention: both take a pointer as first argument followed by
+ * (dmgpio_port_t, dmgpio_pins_mask_t).  The cast from dmgpio_interrupt_handler_t
+ * to dmgpio_port_interrupt_handler_t (and vice versa for invocation via void*)
+ * is safe as long as all pointer types have the same representation. */
+_Static_assert(sizeof(dmdrvi_context_t) == sizeof(void *),
+    "dmdrvi_context_t must have the same size as void* for handler cast to be valid");
 
 /* ---- String helpers ---- */
 
@@ -463,27 +443,21 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    /* Register this context as a per-port handler in dmgpio_port, passing ctx
-     * as user_ptr so the handler receives the context directly without any
-     * global list scan. */
-    if (dmgpio_port_set_driver_interrupt_handler(ctx->config.port,
-                                                  dmgpio_ctx_irq_handler, ctx) != 0)
-    {
-        DMOD_LOG_ERROR("Failed to register port interrupt handler\n");
-        Dmod_Free(ctx);
-        return NULL;
-    }
-
-    /* Register the initial per-context handler provided in the config (optional). */
     if (ctx->config.interrupt_handler != NULL)
     {
-        ctx->handlers[ctx->handler_count++] = ctx->config.interrupt_handler;
+        if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
+                (dmgpio_port_interrupt_handler_t)ctx->config.interrupt_handler, ctx) != 0)
+        {
+            DMOD_LOG_ERROR("Failed to add initial interrupt handler\n");
+            Dmod_Free(ctx);
+            return NULL;
+        }
     }
 
     if (configure(ctx) != 0)
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
-        dmgpio_port_remove_driver_interrupt_handler(ctx->config.port, ctx);
+        dmgpio_port_remove_interrupt_handler(ctx->config.port, ctx);
         Dmod_Free(ctx);
         return NULL;
     }
@@ -497,7 +471,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
 {
     if (is_valid_context(context))
     {
-        dmgpio_port_remove_driver_interrupt_handler(context->config.port, context);
+        dmgpio_port_remove_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
         Dmod_Free(context);
@@ -592,15 +566,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
 
         case dmgpio_ioctl_cmd_set_interrupt_handler:
             if (arg == NULL) return -EINVAL;
-            {
-                if (context->handler_count >= DMGPIO_MAX_HANDLERS_PER_CONTEXT)
-                {
-                    DMOD_LOG_ERROR("Maximum number of interrupt handlers reached\n");
-                    return -ENOMEM;
-                }
-                context->handlers[context->handler_count++] = *(dmgpio_interrupt_handler_t *)arg;
-            }
-            return 0;
+            return dmgpio_port_add_interrupt_handler(
+                context->config.port, context->config.pins,
+                (dmgpio_port_interrupt_handler_t)*(dmgpio_interrupt_handler_t *)arg,
+                context);
 
         default:
             DMOD_LOG_ERROR("Unknown ioctl command %d\n", command);
