@@ -47,4 +47,19 @@ typedef struct
 #define GPIO_BSRR_SET(pin)      (1U << (pin))
 #define GPIO_BSRR_RESET(pin)    (1U << ((pin) + 16U))
 
+/* SYSCFG register base (STM32F4/F7) */
+#define SYSCFG_BASE             0x40013800U
+#define SYSCFG_APB2ENR_BIT      14U   /**< SYSCFGEN bit in RCC APB2ENR */
+#define RCC_APB2ENR             (*(volatile uint32_t *)(0x40023800U + 0x44U))
+
+/* SYSCFG_EXTICRx - connect GPIO port to EXTI line */
+#define SYSCFG_EXTICR(n)        (*(volatile uint32_t *)(SYSCFG_BASE + 0x08U + ((n) * 4U)))
+
+/* EXTI registers */
+#define EXTI_BASE               0x40013C00U
+#define EXTI_IMR                (*(volatile uint32_t *)(EXTI_BASE + 0x00U))
+#define EXTI_RTSR               (*(volatile uint32_t *)(EXTI_BASE + 0x08U))
+#define EXTI_FTSR               (*(volatile uint32_t *)(EXTI_BASE + 0x0CU))
+#define EXTI_PR                 (*(volatile uint32_t *)(EXTI_BASE + 0x14U))
+
 #endif /* DMGPIO_STM32_REGS_H */

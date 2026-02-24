@@ -14,6 +14,11 @@ typedef uint8_t dmgpio_port_t;
 typedef uint8_t dmgpio_pin_t;
 
 /**
+ * @brief Bitmask of pins within a single port (bit N = pin N)
+ */
+typedef uint16_t dmgpio_pins_mask_t;
+
+/**
  * @brief Protection for special pins (e.g. JTAG, NMI)
  */
 typedef enum
@@ -117,7 +122,7 @@ typedef enum
 typedef struct
 {
     dmgpio_port_t           port;               /**< GPIO port index (0=A, 1=B, ...) */
-    dmgpio_pin_t            pin;                /**< GPIO pin number (0-15) */
+    dmgpio_pins_mask_t      pins;               /**< GPIO pin mask (bit N = pin N) */
     dmgpio_protection_t     protection;         /**< Protection for special pins */
     dmgpio_speed_t          speed;              /**< Maximum switching speed */
     dmgpio_current_t        current;            /**< Maximum output current */
