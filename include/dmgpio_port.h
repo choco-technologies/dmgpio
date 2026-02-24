@@ -2,6 +2,7 @@
 #define DMGPIO_PORT_H
 
 #include "dmgpio_types.h"
+#include "dmgpio_port_defs.h"
 
 /* --- Driver interrupt handler --- */
 
