@@ -27,3 +27,46 @@ int dmod_deinit(void)
     Dmod_Printf("DMDRVI interface module deinitialized (STM32F7)\n");
     return 0;
 }
+
+/* ======================================================================
+ *  Weak EXTI ISR stubs – override in application code if needed.
+ *
+ *  Each handler passes a bitmask of the EXTI lines it services to the
+ *  common handler which reads the EXTI PR register and dispatches to the
+ *  registered dmgpio interrupt handler.
+ * ====================================================================== */
+
+__attribute__((weak)) void EXTI0_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x0001UL);
+}
+
+__attribute__((weak)) void EXTI1_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x0002UL);
+}
+
+__attribute__((weak)) void EXTI2_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x0004UL);
+}
+
+__attribute__((weak)) void EXTI3_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x0008UL);
+}
+
+__attribute__((weak)) void EXTI4_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x0010UL);
+}
+
+__attribute__((weak)) void EXTI9_5_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0x03E0UL);
+}
+
+__attribute__((weak)) void EXTI15_10_IRQHandler(void)
+{
+    stm32_gpio_exti_irq_handler(0xFC00UL);
+}
