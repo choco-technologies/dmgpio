@@ -23,14 +23,6 @@ static int is_valid_context(dmdrvi_context_t context)
     return (context != NULL && context->magic == DMGPIO_CONTEXT_MAGIC);
 }
 
-/* dmgpio_interrupt_handler_t and dmgpio_port_interrupt_handler_t share the
- * same calling convention: both take a pointer as first argument followed by
- * (dmgpio_port_t, dmgpio_pins_mask_t).  The cast from dmgpio_interrupt_handler_t
- * to dmgpio_port_interrupt_handler_t (and vice versa for invocation via void*)
- * is safe as long as all pointer types have the same representation. */
-_Static_assert(sizeof(dmdrvi_context_t) == sizeof(void *),
-    "dmdrvi_context_t must have the same size as void* for handler cast to be valid");
-
 /* ---- String helpers ---- */
 
 static const char *mode_to_string(dmgpio_mode_t mode)

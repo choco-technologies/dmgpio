@@ -134,8 +134,9 @@ typedef struct dmdrvi_context *dmdrvi_context_t;
  * @param context   Context of the driver instance
  * @param port      Port on which the interrupt occurred
  * @param pins      Bitmask of pins that caused the interrupt
+ * @param state     Current pin state bitmask (bit N high = pin N is currently high)
  */
-typedef void (*dmgpio_interrupt_handler_t)(dmdrvi_context_t context, dmgpio_port_t port, dmgpio_pins_mask_t pins);
+typedef void (*dmgpio_interrupt_handler_t)(dmdrvi_context_t context, dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t state);
 
 /**
  * @brief GPIO port interrupt handler function type
@@ -146,7 +147,8 @@ typedef void (*dmgpio_interrupt_handler_t)(dmdrvi_context_t context, dmgpio_port
  * @param user_ptr  User pointer supplied at registration time (e.g. driver context)
  * @param port      Port on which the interrupt occurred
  * @param pins      Bitmask of pins that caused the interrupt
+ * @param state     Current pin state bitmask (bit N high = pin N is currently high)
  */
-typedef void (*dmgpio_port_interrupt_handler_t)(void *user_ptr, dmgpio_port_t port, dmgpio_pins_mask_t pins);
+typedef void (*dmgpio_port_interrupt_handler_t)(void *user_ptr, dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t state);
 
 #endif /* DMGPIO_TYPES_H */

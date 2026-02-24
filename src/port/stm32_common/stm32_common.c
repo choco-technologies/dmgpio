@@ -22,9 +22,6 @@ typedef struct
 /** Per-port arrays of registered interrupt handlers. */
 static stm32_port_irq_entry_t s_port_handlers[STM32_MAX_PORTS][STM32_PORT_MAX_IRQ_HANDLERS];
 
-/** Number of handlers currently registered for each port. */
-static uint8_t s_port_handler_count[STM32_MAX_PORTS];
-
 /* ---- Internal helpers ---- */
 
 static int is_valid_port(dmgpio_port_t port)
@@ -107,31 +104,28 @@ dmod_dmgpio_port_api_declaration(1.0, int, _add_interrupt_handler,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_port_interrupt_handler_t handler, void *user_ptr ))
 {
     if (!is_valid_port(port) || handler == NULL) return -1;
-    if (s_port_handler_count[port] >= STM32_PORT_MAX_IRQ_HANDLERS) return -1;
-    s_port_handlers[port][s_port_handler_count[port]].handler  = handler;
-    s_port_handlers[port][s_port_handler_count[port]].user_ptr = user_ptr;
-    s_port_handlers[port][s_port_handler_count[port]].pins     = pins;
-    s_port_handler_count[port]++;
-    return 0;
+    for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
+    {
+        if (s_port_handlers[port][i].handler == NULL)
+        {
+            s_port_handlers[port][i].handler  = handler;
+            s_port_handlers[port][i].user_ptr = user_ptr;
+            s_port_handlers[port][i].pins     = pins;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 dmod_dmgpio_port_api_declaration(1.0, int, _remove_interrupt_handler,
     ( dmgpio_port_t port, void *user_ptr ))
 {
     if (!is_valid_port(port)) return -1;
-    uint8_t i = 0;
-    while (i < s_port_handler_count[port])
+    for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
     {
         if (s_port_handlers[port][i].user_ptr == user_ptr)
         {
-            /* Compact array by moving the last entry into the vacated slot.
-             * Handler invocation order is not guaranteed. */
-            s_port_handler_count[port]--;
-            s_port_handlers[port][i] = s_port_handlers[port][s_port_handler_count[port]];
-        }
-        else
-        {
-            i++;
+            s_port_handlers[port][i].handler = NULL;
         }
     }
     return 0;
@@ -567,12 +561,13 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
 
         /* Dispatch to handlers registered for this port and pin. */
         dmgpio_pins_mask_t pin_mask = (dmgpio_pins_mask_t)(1U << pin);
-        uint8_t count = s_port_handler_count[port];
-        for (uint8_t i = 0; i < count; i++)
+        dmgpio_pins_mask_t state    = (dmgpio_pins_mask_t)STM32_GPIO(port)->IDR;
+        for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
         {
-            if (s_port_handlers[port][i].pins & pin_mask)
+            if (s_port_handlers[port][i].handler != NULL &&
+                (s_port_handlers[port][i].pins & pin_mask))
                 s_port_handlers[port][i].handler(s_port_handlers[port][i].user_ptr,
-                                                 port, pin_mask);
+                                                 port, pin_mask, state);
         }
     }
 }
