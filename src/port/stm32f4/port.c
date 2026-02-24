@@ -85,16 +85,6 @@ int dmod_deinit(void)
     return 0;
 }
 
-dmod_dmgpio_port_api_declaration(1.0, int, _turn_on_driver, ( void ))
-{
-    return 0;
-}
-
-dmod_dmgpio_port_api_declaration(1.0, int, _turn_off_driver, ( void ))
-{
-    return 0;
-}
-
 dmod_dmgpio_port_api_declaration(1.0, int, _set_driver_interrupt_handler,
     ( dmgpio_interrupt_handler_t handler ))
 {

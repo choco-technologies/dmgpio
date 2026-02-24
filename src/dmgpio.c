@@ -4,13 +4,11 @@
 #include "dmini.h"
 #include "dmgpio_port.h"
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Magic set to DGPIO */
 #define DMGPIO_CONTEXT_MAGIC    0x44475049
-
-/* Reference counter for driver turn-on/turn-off */
-static uint32_t driver_ref_count;
 
 /**
  * @brief DMDRVI context structure
@@ -163,24 +161,70 @@ static const char *port_to_string(dmgpio_port_t port)
 
 /* ---- Configuration helpers ---- */
 
-static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
+/**
+ * @brief Parse the section name to resolve port and pins configuration.
+ *
+ * Supports two formats:
+ *   1. Combined: pin=PA5   (sets port=A, pins=1<<5)
+ *   2. Separate: port=A / pins=0x0020  (decimal or hex bitmask)
+ */
+static int read_port_and_pins(dmini_context_t ini, const char *section,
+                               dmgpio_port_t *out_port, dmgpio_pins_mask_t *out_pins)
 {
-    /* Port is mandatory */
-    const char *port_str = dmini_get_string(ini, "dmgpio", "port", NULL);
-    if (string_to_port(port_str, &ctx->config.port) != 0)
+    /* Try combined "pin=PA5" or "pin=A5" format first */
+    const char *pin_str = dmini_get_string(ini, section, "pin", NULL);
+    if (pin_str != NULL)
     {
-        DMOD_LOG_ERROR("Invalid or missing 'port' in [dmgpio] config (expected A-K)\n");
+        /* Accept optional leading 'P' (e.g. "PA5" or "A5") */
+        const char *port_ptr = pin_str;
+        if (port_ptr[0] == 'P') port_ptr++;
+
+        if (port_ptr[0] >= 'A' && port_ptr[0] <= 'K' && port_ptr[1] != '\0')
+        {
+            char *endptr = NULL;
+            long pin_num = strtol(port_ptr + 1, &endptr, 10);
+            if (*endptr != '\0' || pin_num < 0 || pin_num > 15)
+            {
+                DMOD_LOG_ERROR("Invalid pin in '%s' config 'pin=%s' (expected PA0-PK15 or A0-K15)\n",
+                    section, pin_str);
+                return -EINVAL;
+            }
+            *out_port = (dmgpio_port_t)(port_ptr[0] - 'A');
+            *out_pins = (dmgpio_pins_mask_t)(1U << (int)pin_num);
+            return 0;
+        }
+    }
+
+    /* Fall back to separate port= and pins= keys */
+    const char *port_str = dmini_get_string(ini, section, "port", NULL);
+    if (string_to_port(port_str, out_port) != 0)
+    {
+        DMOD_LOG_ERROR("Invalid or missing 'port' in [%s] config (expected A-K)\n", section);
         return -EINVAL;
     }
 
-    /* Pins mask is mandatory */
-    int pins_val = dmini_get_int(ini, "dmgpio", "pins", 0);
-    if (pins_val < 1 || pins_val > 0xFFFF)
+    const char *pins_str = dmini_get_string(ini, section, "pins", NULL);
+    if (pins_str == NULL)
     {
-        DMOD_LOG_ERROR("Invalid or missing 'pins' in [dmgpio] config (must be 1-65535 bitmask)\n");
+        DMOD_LOG_ERROR("Missing 'pins' in [%s] config\n", section);
         return -EINVAL;
     }
-    ctx->config.pins = (dmgpio_pins_mask_t)pins_val;
+    /* strtol with base 0 auto-detects hex (0x) and decimal */
+    char *endptr = NULL;
+    long pins_val = strtol(pins_str, &endptr, 0);
+    if (endptr == pins_str || *endptr != '\0' || pins_val < 1 || pins_val > 0xFFFF)
+    {
+        DMOD_LOG_ERROR("Invalid 'pins' in [%s] config (must be 1-0xFFFF bitmask)\n", section);
+        return -EINVAL;
+    }
+    *out_pins = (dmgpio_pins_mask_t)pins_val;
+    return 0;
+}
+
+static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
+{
+    if (read_port_and_pins(ini, "dmgpio", &ctx->config.port, &ctx->config.pins) != 0)
+        return -EINVAL;
 
     /* Mode is mandatory */
     const char *mode_str = dmini_get_string(ini, "dmgpio", "mode", NULL);
@@ -196,6 +240,7 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
     ctx->config.current          = string_to_current(dmini_get_string(ini, "dmgpio", "current", NULL));
     ctx->config.protection       = string_to_protection(dmini_get_string(ini, "dmgpio", "protection", NULL));
     ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, "dmgpio", "interrupt_trigger", NULL));
+    ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
     return 0;
 }
@@ -332,16 +377,19 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    if (driver_ref_count == 0)
-        dmgpio_port_turn_on_driver();
-    driver_ref_count++;
+    if (ctx->config.interrupt_handler != NULL)
+    {
+        if (dmgpio_port_set_driver_interrupt_handler(ctx->config.interrupt_handler) != 0)
+        {
+            DMOD_LOG_ERROR("Failed to set interrupt handler\n");
+            Dmod_Free(ctx);
+            return NULL;
+        }
+    }
 
     if (configure(ctx) != 0)
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
-        driver_ref_count--;
-        if (driver_ref_count == 0)
-            dmgpio_port_turn_off_driver();
         Dmod_Free(ctx);
         return NULL;
     }
@@ -358,12 +406,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
         Dmod_Free(context);
-        if (driver_ref_count > 0)
-        {
-            driver_ref_count--;
-            if (driver_ref_count == 0)
-                dmgpio_port_turn_off_driver();
-        }
     }
 }
 
@@ -451,6 +493,20 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
             if (arg == NULL) return -EINVAL;
             *(dmgpio_pins_mask_t *)arg =
                 dmgpio_port_get_low_state_pins(context->config.port, context->config.pins);
+            return 0;
+
+        case dmgpio_ioctl_cmd_set_interrupt_handler:
+            if (arg == NULL) return -EINVAL;
+            {
+                dmgpio_interrupt_handler_t handler = *(dmgpio_interrupt_handler_t *)arg;
+                int ret = dmgpio_port_set_driver_interrupt_handler(handler);
+                if (ret != 0)
+                {
+                    DMOD_LOG_ERROR("Failed to set interrupt handler via ioctl\n");
+                    return ret;
+                }
+                context->config.interrupt_handler = handler;
+            }
             return 0;
 
         default:

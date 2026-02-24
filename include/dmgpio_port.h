@@ -5,20 +5,8 @@
 #include <stdbool.h>
 #include "dmgpio.h"
 
-/**
- * @brief GPIO interrupt handler function type
- *
- * Called when an interrupt occurs on a GPIO pin.
- *
- * @param port   Port on which the interrupt occurred
- * @param pins   Bitmask of pins that caused the interrupt
- */
-typedef void (*dmgpio_interrupt_handler_t)(dmgpio_port_t port, dmgpio_pins_mask_t pins);
+/* --- Driver interrupt handler --- */
 
-/* --- Driver lifecycle --- */
-
-dmod_dmgpio_port_api(1.0, int,  _turn_on_driver,   ( void ));
-dmod_dmgpio_port_api(1.0, int,  _turn_off_driver,  ( void ));
 dmod_dmgpio_port_api(1.0, int,  _set_driver_interrupt_handler, ( dmgpio_interrupt_handler_t handler ));
 
 /* --- Configuration session --- */

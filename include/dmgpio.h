@@ -90,10 +90,10 @@ typedef enum
     dmgpio_int_trigger_off          = 0,                        /**< Interrupts disabled */
     dmgpio_int_trigger_rising_edge  = (1 << 0),                 /**< Rising edge */
     dmgpio_int_trigger_falling_edge = (1 << 1),                 /**< Falling edge */
-    dmgpio_int_trigger_both_edges   = (1 << 0) | (1 << 1),     /**< Both edges */
-    dmgpio_int_trigger_high_level   = (1 << 2),                 /**< High level */
-    dmgpio_int_trigger_low_level    = (1 << 3),                 /**< Low level */
-    dmgpio_int_trigger_both_levels  = (1 << 2) | (1 << 3)      /**< Both levels */
+    dmgpio_int_trigger_both_edges   = dmgpio_int_trigger_rising_edge | dmgpio_int_trigger_falling_edge,  /**< Both edges */
+    dmgpio_int_trigger_high_level   = (1 << 2),                                                     /**< High level */
+    dmgpio_int_trigger_low_level    = (1 << 3),                                                     /**< Low level */
+    dmgpio_int_trigger_both_levels  = dmgpio_int_trigger_high_level | dmgpio_int_trigger_low_level   /**< Both levels */
 } dmgpio_int_trigger_t;
 
 /**
@@ -110,26 +110,38 @@ typedef enum
  */
 typedef enum
 {
-    dmgpio_ioctl_cmd_toggle_pins,           /**< Toggle pins state */
-    dmgpio_ioctl_cmd_set_pins_state,        /**< Set new pins state */
-    dmgpio_ioctl_cmd_get_high_pins_state,   /**< Read pins that are in high state */
-    dmgpio_ioctl_cmd_get_low_pins_state     /**< Read pins that are in low state */
+    dmgpio_ioctl_cmd_toggle_pins,               /**< Toggle pins state */
+    dmgpio_ioctl_cmd_set_pins_state,            /**< Set new pins state */
+    dmgpio_ioctl_cmd_get_high_pins_state,       /**< Read pins that are in high state */
+    dmgpio_ioctl_cmd_get_low_pins_state,        /**< Read pins that are in low state */
+    dmgpio_ioctl_cmd_set_interrupt_handler      /**< Set interrupt handler; arg = dmgpio_interrupt_handler_t* */
 } dmgpio_ioctl_cmd_t;
+
+/**
+ * @brief GPIO interrupt handler function type
+ *
+ * Called when an interrupt occurs on a GPIO pin.
+ *
+ * @param port   Port on which the interrupt occurred
+ * @param pins   Bitmask of pins that caused the interrupt
+ */
+typedef void (*dmgpio_interrupt_handler_t)(dmgpio_port_t port, dmgpio_pins_mask_t pins);
 
 /**
  * @brief GPIO driver configuration structure
  */
 typedef struct
 {
-    dmgpio_port_t           port;               /**< GPIO port index (0=A, 1=B, ...) */
-    dmgpio_pins_mask_t      pins;               /**< GPIO pin mask (bit N = pin N) */
-    dmgpio_protection_t     protection;         /**< Protection for special pins */
-    dmgpio_speed_t          speed;              /**< Maximum switching speed */
-    dmgpio_current_t        current;            /**< Maximum output current */
-    dmgpio_mode_t           mode;               /**< Pin direction mode */
-    dmgpio_pull_t           pull;               /**< Pull-up/pull-down selection */
-    dmgpio_output_circuit_t output_circuit;     /**< Output circuit type */
-    dmgpio_int_trigger_t    interrupt_trigger;  /**< Interrupt trigger source */
+    dmgpio_port_t               port;               /**< GPIO port index (0=A, 1=B, ...) */
+    dmgpio_pins_mask_t          pins;               /**< GPIO pin mask (bit N = pin N) */
+    dmgpio_protection_t         protection;         /**< Protection for special pins */
+    dmgpio_speed_t              speed;              /**< Maximum switching speed */
+    dmgpio_current_t            current;            /**< Maximum output current */
+    dmgpio_mode_t               mode;               /**< Pin direction mode */
+    dmgpio_pull_t               pull;               /**< Pull-up/pull-down selection */
+    dmgpio_output_circuit_t     output_circuit;     /**< Output circuit type */
+    dmgpio_int_trigger_t        interrupt_trigger;  /**< Interrupt trigger source */
+    dmgpio_interrupt_handler_t  interrupt_handler;  /**< Interrupt handler (NULL = not used) */
 } dmgpio_config_t;
 
 #endif /* DMGPIO_H */
