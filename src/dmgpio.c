@@ -10,93 +10,45 @@
 #define DMGPIO_CONTEXT_MAGIC    0x44475049
 
 /**
- * @brief Linked list node for interrupt handlers registered on a context.
+ * @brief Maximum number of interrupt handlers that can be registered on one context.
+ *
+ * Additional handlers beyond this limit are rejected with -ENOMEM.
+ * Adjust this compile-time constant if more handlers per context are needed.
  */
-struct dmgpio_handler_node
-{
-    dmgpio_interrupt_handler_t    handler;
-    struct dmgpio_handler_node   *next;
-};
+#define DMGPIO_MAX_HANDLERS_PER_CONTEXT  4U
 
 /**
  * @brief DMDRVI context structure
  */
 struct dmdrvi_context
 {
-    uint32_t                    magic;      /**< Magic number for validation */
-    dmgpio_config_t             config;     /**< GPIO configuration */
-    struct dmgpio_handler_node *handlers;   /**< Linked list of interrupt handlers */
-    struct dmdrvi_context      *next;       /**< Next context in global list */
+    uint32_t                    magic;                                          /**< Magic number for validation */
+    dmgpio_config_t             config;                                         /**< GPIO configuration */
+    dmgpio_interrupt_handler_t  handlers[DMGPIO_MAX_HANDLERS_PER_CONTEXT];     /**< Registered user handlers */
+    size_t                      handler_count;                                  /**< Number of registered handlers */
 };
-
-/** Global list of all active contexts, used by the port-level interrupt handler. */
-static dmdrvi_context_t s_context_list = NULL;
-
-/** Set to 1 once the driver's port-level interrupt handler has been registered. */
-static int s_port_handler_registered = 0;
 
 static int is_valid_context(dmdrvi_context_t context)
 {
     return (context != NULL && context->magic == DMGPIO_CONTEXT_MAGIC);
 }
 
-/* ---- Handler list helpers ---- */
-
-static int add_handler(dmdrvi_context_t ctx, dmgpio_interrupt_handler_t handler)
-{
-    struct dmgpio_handler_node *node =
-        (struct dmgpio_handler_node *)Dmod_Malloc(sizeof(struct dmgpio_handler_node));
-    if (node == NULL)
-    {
-        DMOD_LOG_ERROR("Failed to allocate interrupt handler node\n");
-        return -ENOMEM;
-    }
-    node->handler = handler;
-    node->next    = ctx->handlers;
-    ctx->handlers = node;
-    return 0;
-}
-
-static void free_handlers(dmdrvi_context_t ctx)
-{
-    struct dmgpio_handler_node *node = ctx->handlers;
-    while (node != NULL)
-    {
-        struct dmgpio_handler_node *next = node->next;
-        Dmod_Free(node);
-        node = next;
-    }
-    ctx->handlers = NULL;
-}
-
-/* ---- Port-level interrupt dispatcher ---- */
+/* ---- Per-context interrupt handler ---- */
 
 /**
- * @brief Port-level interrupt handler registered with dmgpio_port.
+ * @brief Port-level interrupt handler registered per context in dmgpio_port.
  *
- * Iterates over all active contexts and calls every registered user handler
- * whose port/pins match the interrupt that fired.
+ * Called by the port layer with @p user_ptr set to the owning context.
+ * Filters the interrupt to pins owned by this context and calls all
+ * registered user handlers.
  */
-static void dmgpio_port_interrupt_dispatch(dmgpio_port_t port, dmgpio_pins_mask_t pins)
+static void dmgpio_ctx_irq_handler(void *user_ptr, dmgpio_port_t port, dmgpio_pins_mask_t pins)
 {
-    dmdrvi_context_t ctx = s_context_list;
-    while (ctx != NULL)
-    {
-        if (ctx->config.port == port)
-        {
-            dmgpio_pins_mask_t matching = (dmgpio_pins_mask_t)(ctx->config.pins & pins);
-            if (matching != 0U)
-            {
-                struct dmgpio_handler_node *node = ctx->handlers;
-                while (node != NULL)
-                {
-                    node->handler(ctx, port, matching);
-                    node = node->next;
-                }
-            }
-        }
-        ctx = ctx->next;
-    }
+    dmdrvi_context_t ctx = (dmdrvi_context_t)user_ptr;
+    dmgpio_pins_mask_t matching = (dmgpio_pins_mask_t)(ctx->config.pins & pins);
+    if (matching == 0U) return;
+    for (size_t i = 0; i < ctx->handler_count; i++)
+        ctx->handlers[i](ctx, port, matching);
 }
 
 /* ---- String helpers ---- */
@@ -511,45 +463,30 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    /* Register the driver's port-level handler exactly once.
-     * The handler is safe to call even when s_context_list is NULL — it
-     * simply returns without dispatching anything.  Once registered the
-     * handler stays registered for the lifetime of the module; there is
-     * no need to unregister it when individual contexts are freed. */
-    if (!s_port_handler_registered)
+    /* Register this context as a per-port handler in dmgpio_port, passing ctx
+     * as user_ptr so the handler receives the context directly without any
+     * global list scan. */
+    if (dmgpio_port_set_driver_interrupt_handler(ctx->config.port,
+                                                  dmgpio_ctx_irq_handler, ctx) != 0)
     {
-        if (dmgpio_port_set_driver_interrupt_handler(dmgpio_port_interrupt_dispatch) != 0)
-        {
-            DMOD_LOG_ERROR("Failed to set port interrupt handler\n");
-            Dmod_Free(ctx);
-            return NULL;
-        }
-        s_port_handler_registered = 1;
+        DMOD_LOG_ERROR("Failed to register port interrupt handler\n");
+        Dmod_Free(ctx);
+        return NULL;
     }
 
     /* Register the initial per-context handler provided in the config (optional). */
     if (ctx->config.interrupt_handler != NULL)
     {
-        if (add_handler(ctx, ctx->config.interrupt_handler) != 0)
-        {
-            DMOD_LOG_ERROR("Failed to add initial interrupt handler\n");
-            free_handlers(ctx);
-            Dmod_Free(ctx);
-            return NULL;
-        }
+        ctx->handlers[ctx->handler_count++] = ctx->config.interrupt_handler;
     }
 
     if (configure(ctx) != 0)
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
-        free_handlers(ctx);
+        dmgpio_port_remove_driver_interrupt_handler(ctx->config.port, ctx);
         Dmod_Free(ctx);
         return NULL;
     }
-
-    /* Add context to the global list for interrupt dispatch. */
-    ctx->next       = s_context_list;
-    s_context_list  = ctx;
 
     DMOD_LOG_INFO("GPIO device created for P%s[0x%04X]\n",
         port_to_string(ctx->config.port), (unsigned)ctx->config.pins);
@@ -560,21 +497,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
 {
     if (is_valid_context(context))
     {
-        /* Remove context from the global list. */
-        if (s_context_list == context)
-        {
-            s_context_list = context->next;
-        }
-        else
-        {
-            dmdrvi_context_t prev = s_context_list;
-            while (prev != NULL && prev->next != context)
-                prev = prev->next;
-            if (prev != NULL)
-                prev->next = context->next;
-        }
-
-        free_handlers(context);
+        dmgpio_port_remove_driver_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
         Dmod_Free(context);
@@ -670,13 +593,12 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
         case dmgpio_ioctl_cmd_set_interrupt_handler:
             if (arg == NULL) return -EINVAL;
             {
-                dmgpio_interrupt_handler_t handler = *(dmgpio_interrupt_handler_t *)arg;
-                int ret = add_handler(context, handler);
-                if (ret != 0)
+                if (context->handler_count >= DMGPIO_MAX_HANDLERS_PER_CONTEXT)
                 {
-                    DMOD_LOG_ERROR("Failed to add interrupt handler via ioctl\n");
-                    return ret;
+                    DMOD_LOG_ERROR("Maximum number of interrupt handlers reached\n");
+                    return -ENOMEM;
                 }
+                context->handlers[context->handler_count++] = *(dmgpio_interrupt_handler_t *)arg;
             }
             return 0;
 

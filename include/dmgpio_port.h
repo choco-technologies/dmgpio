@@ -8,7 +8,10 @@
 
 /* --- Driver interrupt handler --- */
 
-dmod_dmgpio_port_api(1.0, int,  _set_driver_interrupt_handler, ( dmgpio_port_interrupt_handler_t handler ));
+dmod_dmgpio_port_api(1.0, int,  _set_driver_interrupt_handler,
+    ( dmgpio_port_t port, dmgpio_port_interrupt_handler_t handler, void *user_ptr ));
+dmod_dmgpio_port_api(1.0, int,  _remove_driver_interrupt_handler,
+    ( dmgpio_port_t port, void *user_ptr ));
 
 /* --- Configuration session --- */
 

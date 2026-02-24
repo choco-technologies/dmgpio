@@ -6,8 +6,23 @@
 /** Bitmask of pins currently in use, indexed by port number. */
 static dmgpio_pins_mask_t s_pins_used[STM32_MAX_PORTS] = {0};
 
-/** Registered GPIO port interrupt handler (NULL if not set). */
-static dmgpio_port_interrupt_handler_t s_interrupt_handler = NULL;
+/** Maximum number of interrupt handlers that can be registered per port.
+ *  Each dmgpio context that uses interrupts on a given port occupies one slot.
+ *  Increase this value if more than 8 contexts share the same port. */
+#define STM32_PORT_MAX_IRQ_HANDLERS  8U
+
+/** Per-port interrupt handler entry (handler function + opaque user pointer). */
+typedef struct
+{
+    dmgpio_port_interrupt_handler_t handler;
+    void                           *user_ptr;
+} stm32_port_irq_entry_t;
+
+/** Per-port arrays of registered interrupt handlers. */
+static stm32_port_irq_entry_t s_port_handlers[STM32_MAX_PORTS][STM32_PORT_MAX_IRQ_HANDLERS];
+
+/** Number of handlers currently registered for each port. */
+static uint8_t s_port_handler_count[STM32_MAX_PORTS];
 
 /* ---- Internal helpers ---- */
 
@@ -88,10 +103,33 @@ static uint32_t exti_pin_to_irqn(int pin)
  * ====================================================================== */
 
 dmod_dmgpio_port_api_declaration(1.0, int, _set_driver_interrupt_handler,
-    ( dmgpio_port_interrupt_handler_t handler ))
+    ( dmgpio_port_t port, dmgpio_port_interrupt_handler_t handler, void *user_ptr ))
 {
-    s_interrupt_handler = handler;
+    if (!is_valid_port(port) || handler == NULL) return -1;
+    if (s_port_handler_count[port] >= STM32_PORT_MAX_IRQ_HANDLERS) return -1;
+    s_port_handlers[port][s_port_handler_count[port]].handler  = handler;
+    s_port_handlers[port][s_port_handler_count[port]].user_ptr = user_ptr;
+    s_port_handler_count[port]++;
     return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _remove_driver_interrupt_handler,
+    ( dmgpio_port_t port, void *user_ptr ))
+{
+    if (!is_valid_port(port)) return -1;
+    uint8_t count = s_port_handler_count[port];
+    for (uint8_t i = 0; i < count; i++)
+    {
+        if (s_port_handlers[port][i].user_ptr == user_ptr)
+        {
+            /* Compact array by moving the last entry into the vacated slot.
+             * Handler invocation order is not guaranteed. */
+            s_port_handler_count[port]--;
+            s_port_handlers[port][i] = s_port_handlers[port][s_port_handler_count[port]];
+            return 0;
+        }
+    }
+    return -1;
 }
 
 /* ======================================================================
@@ -510,7 +548,7 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
     uint32_t pending = exti->PR & exti_lines;
     exti->PR = pending; /* Writing 1 clears the pending bit. */
 
-    if (s_interrupt_handler == NULL || pending == 0U) return;
+    if (pending == 0U) return;
 
     for (int pin = 0; pin < 16; pin++)
     {
@@ -522,7 +560,11 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
         dmgpio_port_t port = (dmgpio_port_t)
             ((STM32_SYSCFG_EXTICR[exticr_idx] >> exticr_shift) & 0xFU);
 
-        s_interrupt_handler(port, (dmgpio_pins_mask_t)(1U << pin));
+        /* Dispatch directly to all handlers registered for this port. */
+        uint8_t count = s_port_handler_count[port];
+        for (uint8_t i = 0; i < count; i++)
+            s_port_handlers[port][i].handler(s_port_handlers[port][i].user_ptr,
+                                             port, (dmgpio_pins_mask_t)(1U << pin));
     }
 }
 

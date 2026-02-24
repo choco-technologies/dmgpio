@@ -143,9 +143,10 @@ typedef void (*dmgpio_interrupt_handler_t)(dmdrvi_context_t context, dmgpio_port
  * Called by the port layer when an interrupt occurs on a GPIO pin.
  * Registered by the dmgpio driver in the dmgpio_port layer.
  *
- * @param port   Port on which the interrupt occurred
- * @param pins   Bitmask of pins that caused the interrupt
+ * @param user_ptr  User pointer supplied at registration time (e.g. driver context)
+ * @param port      Port on which the interrupt occurred
+ * @param pins      Bitmask of pins that caused the interrupt
  */
-typedef void (*dmgpio_port_interrupt_handler_t)(dmgpio_port_t port, dmgpio_pins_mask_t pins);
+typedef void (*dmgpio_port_interrupt_handler_t)(void *user_ptr, dmgpio_port_t port, dmgpio_pins_mask_t pins);
 
 #endif /* DMGPIO_TYPES_H */
