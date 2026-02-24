@@ -1,6 +1,7 @@
 #define DMOD_ENABLE_REGISTRATION    ON
 #include "dmgpio_port.h"
 #include "port/stm32_gpio_regs.h"
+#include <stddef.h>
 
 /* STM32F7 GPIO base addresses */
 #define STM32F7_GPIOA_BASE  0x40020000U
@@ -15,251 +16,339 @@
 #define STM32F7_GPIOJ_BASE  0x40022400U
 #define STM32F7_GPIOK_BASE  0x40022800U
 
-/* STM32F7 RCC AHB1ENR register (GPIO clock enable) */
 #define STM32F7_RCC_BASE    0x40023800U
 #define STM32F7_RCC_AHB1ENR (*(volatile uint32_t *)(STM32F7_RCC_BASE + 0x30U))
 
-/* Number of supported GPIO ports */
 #define STM32F7_GPIO_PORT_COUNT 11U
 
-/* GPIO base address lookup table */
 static const uint32_t gpio_base_addresses[STM32F7_GPIO_PORT_COUNT] = {
-    STM32F7_GPIOA_BASE,
-    STM32F7_GPIOB_BASE,
-    STM32F7_GPIOC_BASE,
-    STM32F7_GPIOD_BASE,
-    STM32F7_GPIOE_BASE,
-    STM32F7_GPIOF_BASE,
-    STM32F7_GPIOG_BASE,
-    STM32F7_GPIOH_BASE,
-    STM32F7_GPIOI_BASE,
-    STM32F7_GPIOJ_BASE,
-    STM32F7_GPIOK_BASE,
+    STM32F7_GPIOA_BASE, STM32F7_GPIOB_BASE, STM32F7_GPIOC_BASE,
+    STM32F7_GPIOD_BASE, STM32F7_GPIOE_BASE, STM32F7_GPIOF_BASE,
+    STM32F7_GPIOG_BASE, STM32F7_GPIOH_BASE, STM32F7_GPIOI_BASE,
+    STM32F7_GPIOJ_BASE, STM32F7_GPIOK_BASE,
 };
 
-/**
- * @brief Get GPIO peripheral pointer for a given port index
- *
- * @param port Port index (0=GPIOA, 1=GPIOB, ...)
- *
- * @return GPIO_TypeDef* Pointer to GPIO registers, or NULL if invalid
- */
-static GPIO_TypeDef* get_gpio(dmgpio_port_t port)
+/* Per-port pin usage bitmasks */
+static uint16_t pin_used_mask[STM32F7_GPIO_PORT_COUNT];
+
+static dmgpio_interrupt_handler_t interrupt_handler = NULL;
+
+static GPIO_TypeDef *get_gpio(dmgpio_port_t port)
 {
-    if (port >= STM32F7_GPIO_PORT_COUNT)
-    {
-        return NULL;
-    }
-    return (GPIO_TypeDef*)gpio_base_addresses[port];
+    if (port >= STM32F7_GPIO_PORT_COUNT) return NULL;
+    return (GPIO_TypeDef *)gpio_base_addresses[port];
 }
 
-/**
- * @brief Enable GPIO port clock
- *
- * @param port Port index (0=GPIOA, ...)
- */
-static void enable_gpio_clock(dmgpio_port_t port)
-{
-    if (port < STM32F7_GPIO_PORT_COUNT)
-    {
-        STM32F7_RCC_AHB1ENR |= (1U << port);
-        /* Short delay to allow clock to stabilize */
-        (void)STM32F7_RCC_AHB1ENR;
-    }
-}
-
-/**
- * @brief Initialize the DMOD module
- *
- * @param Config Pointer to Dmod_Config_t structure with configuration parameters
- *
- * @return int 0 on success, non-zero on failure
- */
 int dmod_init(const Dmod_Config_t *Config)
 {
+    for (dmgpio_port_t i = 0; i < STM32F7_GPIO_PORT_COUNT; i++)
+        pin_used_mask[i] = 0;
+    interrupt_handler = NULL;
     Dmod_Printf("dmgpio port module initialized (STM32F7)\n");
     return 0;
 }
 
-/**
- * @brief Deinitialize the DMOD module
- *
- * @return int 0 on success, non-zero on failure
- */
 int dmod_deinit(void)
 {
+    for (dmgpio_port_t i = 0; i < STM32F7_GPIO_PORT_COUNT; i++)
+        pin_used_mask[i] = 0;
+    interrupt_handler = NULL;
     Dmod_Printf("dmgpio port module deinitialized (STM32F7)\n");
     return 0;
 }
 
-/**
- * @brief Initialize a GPIO pin
- *
- * @param port GPIO port index (0=GPIOA, 1=GPIOB, ...)
- * @param pin GPIO pin number (0-15)
- * @param mode Pin mode
- * @param pull Pull resistor configuration
- * @param speed Output speed
- * @param alternate Alternate function number (0-15)
- *
- * @return int 0 on success, non-zero on failure
- */
-dmod_dmgpio_port_api_declaration(1.0, int, _init, ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_mode_t mode, dmgpio_pull_t pull, dmgpio_speed_t speed, uint8_t alternate ))
+dmod_dmgpio_port_api_declaration(1.0, int, _turn_on_driver, ( void ))
 {
-    GPIO_TypeDef* gpio = get_gpio(port);
-    if (gpio == NULL || pin > 15U)
-    {
-        return -1;
-    }
+    return 0;
+}
 
-    enable_gpio_clock(port);
+dmod_dmgpio_port_api_declaration(1.0, int, _turn_off_driver, ( void ))
+{
+    return 0;
+}
 
-    /* Configure MODER */
-    uint32_t moder_val;
+dmod_dmgpio_port_api_declaration(1.0, int, _set_driver_interrupt_handler,
+    ( dmgpio_interrupt_handler_t handler ))
+{
+    interrupt_handler = handler;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _begin_configuration,
+    ( dmgpio_port_t port, dmgpio_pin_t pin ))
+{
+    (void)port; (void)pin;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _finish_configuration,
+    ( dmgpio_port_t port, dmgpio_pin_t pin ))
+{
+    (void)port; (void)pin;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_power,
+    ( dmgpio_port_t port, int power_on ))
+{
+    if (port >= STM32F7_GPIO_PORT_COUNT) return -1;
+    if (power_on)
+        STM32F7_RCC_AHB1ENR |= (1U << port);
+    else
+        STM32F7_RCC_AHB1ENR &= ~(1U << port);
+    (void)STM32F7_RCC_AHB1ENR; /* read-back for clock stabilisation */
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _is_pin_protected,
+    ( dmgpio_port_t port, dmgpio_pin_t pin ))
+{
+    (void)port; (void)pin;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _unlock_protection,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_protection_t protection ))
+{
+    (void)port; (void)pin; (void)protection;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _lock_protection,
+    ( dmgpio_port_t port, dmgpio_pin_t pin ))
+{
+    (void)port; (void)pin;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_mode,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_mode_t mode ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U) return -1;
+    uint32_t val;
     switch (mode)
     {
-        case dmgpio_mode_output_pp:
-        case dmgpio_mode_output_od:
-            moder_val = GPIO_MODER_OUTPUT;
-            break;
-        case dmgpio_mode_af_pp:
-        case dmgpio_mode_af_od:
-            moder_val = GPIO_MODER_AF;
-            break;
-        case dmgpio_mode_analog:
-            moder_val = GPIO_MODER_ANALOG;
-            break;
-        case dmgpio_mode_input:
-        default:
-            moder_val = GPIO_MODER_INPUT;
-            break;
+        case dmgpio_mode_output:    val = GPIO_MODER_OUTPUT; break;
+        case dmgpio_mode_alternate: val = GPIO_MODER_AF;     break;
+        default:                    val = GPIO_MODER_INPUT;  break;
     }
-    gpio->MODER = (gpio->MODER & ~(0x3U << (pin * 2U))) | (moder_val << (pin * 2U));
+    gpio->MODER = (gpio->MODER & ~(0x3U << (pin * 2U))) | (val << (pin * 2U));
+    return 0;
+}
 
-    /* Configure OTYPER */
-    if (mode == dmgpio_mode_output_od || mode == dmgpio_mode_af_od)
+dmod_dmgpio_port_api_declaration(1.0, int, _read_mode,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_mode_t *out_mode ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U || out_mode == NULL) return -1;
+    uint32_t val = (gpio->MODER >> (pin * 2U)) & 0x3U;
+    switch (val)
     {
-        gpio->OTYPER |= GPIO_OTYPER_OD << pin;
+        case GPIO_MODER_OUTPUT: *out_mode = dmgpio_mode_output;    break;
+        case GPIO_MODER_AF:     *out_mode = dmgpio_mode_alternate; break;
+        default:                *out_mode = dmgpio_mode_input;     break;
     }
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_output_circuit,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_output_circuit_t oc ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U) return -1;
+    if (oc == dmgpio_output_circuit_open_drain)
+        gpio->OTYPER |= (1U << pin);
     else
-    {
-        gpio->OTYPER &= ~(GPIO_OTYPER_OD << pin);
-    }
+        gpio->OTYPER &= ~(1U << pin);
+    return 0;
+}
 
-    /* Configure OSPEEDR */
-    uint32_t speed_val;
+dmod_dmgpio_port_api_declaration(1.0, int, _read_output_circuit,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_output_circuit_t *out_oc ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U || out_oc == NULL) return -1;
+    *out_oc = (gpio->OTYPER & (1U << pin)) ?
+        dmgpio_output_circuit_open_drain : dmgpio_output_circuit_push_pull;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_speed,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_speed_t speed ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U) return -1;
+    uint32_t val;
     switch (speed)
     {
-        case dmgpio_speed_medium:     speed_val = GPIO_OSPEEDR_MEDIUM;    break;
-        case dmgpio_speed_high:       speed_val = GPIO_OSPEEDR_HIGH;      break;
-        case dmgpio_speed_very_high:  speed_val = GPIO_OSPEEDR_VERY_HIGH; break;
-        case dmgpio_speed_low:
-        default:                      speed_val = GPIO_OSPEEDR_LOW;       break;
+        case dmgpio_speed_medium:  val = GPIO_OSPEEDR_MEDIUM;    break;
+        case dmgpio_speed_maximum: val = GPIO_OSPEEDR_VERY_HIGH; break;
+        default:                   val = GPIO_OSPEEDR_LOW;       break;
     }
-    gpio->OSPEEDR = (gpio->OSPEEDR & ~(0x3U << (pin * 2U))) | (speed_val << (pin * 2U));
+    gpio->OSPEEDR = (gpio->OSPEEDR & ~(0x3U << (pin * 2U))) | (val << (pin * 2U));
+    return 0;
+}
 
-    /* Configure PUPDR */
-    uint32_t pupdr_val;
+dmod_dmgpio_port_api_declaration(1.0, int, _read_speed,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_speed_t *out_speed ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U || out_speed == NULL) return -1;
+    uint32_t val = (gpio->OSPEEDR >> (pin * 2U)) & 0x3U;
+    switch (val)
+    {
+        case GPIO_OSPEEDR_MEDIUM:    *out_speed = dmgpio_speed_medium;  break;
+        case GPIO_OSPEEDR_HIGH:      /* fall-through */
+        case GPIO_OSPEEDR_VERY_HIGH: *out_speed = dmgpio_speed_maximum; break;
+        default:                     *out_speed = dmgpio_speed_minimum; break;
+    }
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_current,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_current_t current ))
+{
+    /* STM32F7 does not have a separate current register */
+    (void)port; (void)pin; (void)current;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _read_current,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_current_t *out_current ))
+{
+    (void)port; (void)pin;
+    if (out_current == NULL) return -1;
+    *out_current = dmgpio_current_default;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_pull,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_pull_t pull ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U) return -1;
+    uint32_t val;
     switch (pull)
     {
-        case dmgpio_pull_up:    pupdr_val = GPIO_PUPDR_UP;   break;
-        case dmgpio_pull_down:  pupdr_val = GPIO_PUPDR_DOWN; break;
-        case dmgpio_pull_none:
-        default:                pupdr_val = GPIO_PUPDR_NONE; break;
+        case dmgpio_pull_up:   val = GPIO_PUPDR_UP;   break;
+        case dmgpio_pull_down: val = GPIO_PUPDR_DOWN; break;
+        default:               val = GPIO_PUPDR_NONE; break;
     }
-    gpio->PUPDR = (gpio->PUPDR & ~(0x3U << (pin * 2U))) | (pupdr_val << (pin * 2U));
-
-    /* Configure alternate function */
-    if (mode == dmgpio_mode_af_pp || mode == dmgpio_mode_af_od)
-    {
-        uint32_t afr_idx = pin / 8U;
-        uint32_t afr_pos = (pin % 8U) * 4U;
-        gpio->AFR[afr_idx] = (gpio->AFR[afr_idx] & ~(0xFU << afr_pos)) | ((uint32_t)alternate << afr_pos);
-    }
-
+    gpio->PUPDR = (gpio->PUPDR & ~(0x3U << (pin * 2U))) | (val << (pin * 2U));
     return 0;
 }
 
-/**
- * @brief Deinitialize a GPIO pin (reset to input/no pull)
- *
- * @param port GPIO port index (0=GPIOA, 1=GPIOB, ...)
- * @param pin GPIO pin number (0-15)
- *
- * @return int 0 on success, non-zero on failure
- */
-dmod_dmgpio_port_api_declaration(1.0, int, _deinit, ( dmgpio_port_t port, dmgpio_pin_t pin ))
+dmod_dmgpio_port_api_declaration(1.0, int, _read_pull,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_pull_t *out_pull ))
 {
-    GPIO_TypeDef* gpio = get_gpio(port);
-    if (gpio == NULL || pin > 15U)
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || pin > 15U || out_pull == NULL) return -1;
+    uint32_t val = (gpio->PUPDR >> (pin * 2U)) & 0x3U;
+    switch (val)
     {
-        return -1;
+        case GPIO_PUPDR_UP:   *out_pull = dmgpio_pull_up;      break;
+        case GPIO_PUPDR_DOWN: *out_pull = dmgpio_pull_down;    break;
+        default:              *out_pull = dmgpio_pull_default;  break;
     }
-
-    /* Reset to input mode, no pull, low speed */
-    gpio->MODER   &= ~(0x3U << (pin * 2U));
-    gpio->OTYPER  &= ~(1U << pin);
-    gpio->OSPEEDR &= ~(0x3U << (pin * 2U));
-    gpio->PUPDR   &= ~(0x3U << (pin * 2U));
-
     return 0;
 }
 
-/**
- * @brief Read the current state of a GPIO pin
- *
- * @param port GPIO port index (0=GPIOA, 1=GPIOB, ...)
- * @param pin GPIO pin number (0-15)
- *
- * @return dmgpio_pin_state_t Current pin state
- */
-dmod_dmgpio_port_api_declaration(1.0, dmgpio_pin_state_t, _read_pin, ( dmgpio_port_t port, dmgpio_pin_t pin ))
+dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_int_trigger_t trigger ))
 {
-    GPIO_TypeDef* gpio = get_gpio(port);
-    if (gpio == NULL || pin > 15U)
-    {
-        return dmgpio_pin_reset;
-    }
-    return (gpio->IDR & GPIO_PIN_MASK(pin)) ? dmgpio_pin_set : dmgpio_pin_reset;
+    /* EXTI/NVIC configuration is application-specific; stub here */
+    (void)port; (void)pin; (void)trigger;
+    return 0;
 }
 
-/**
- * @brief Write a state to a GPIO pin
- *
- * @param port GPIO port index (0=GPIOA, 1=GPIOB, ...)
- * @param pin GPIO pin number (0-15)
- * @param state Pin state to write
- */
-dmod_dmgpio_port_api_declaration(1.0, void, _write_pin, ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_pin_state_t state ))
+dmod_dmgpio_port_api_declaration(1.0, int, _read_interrupt_trigger,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, dmgpio_int_trigger_t *out_trigger ))
 {
-    GPIO_TypeDef* gpio = get_gpio(port);
-    if (gpio == NULL || pin > 15U)
-    {
-        return;
-    }
+    (void)port; (void)pin;
+    if (out_trigger == NULL) return -1;
+    *out_trigger = dmgpio_int_trigger_off;
+    return 0;
+}
 
-    if (state == dmgpio_pin_set)
-    {
-        gpio->BSRR = GPIO_BSRR_SET(pin);
-    }
+dmod_dmgpio_port_api_declaration(1.0, int, _set_pins_used,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
+{
+    if (port >= STM32F7_GPIO_PORT_COUNT) return -1;
+    pin_used_mask[port] |= pins;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _set_pins_unused,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
+{
+    if (port >= STM32F7_GPIO_PORT_COUNT) return -1;
+    pin_used_mask[port] &= ~pins;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _check_is_pin_used,
+    ( dmgpio_port_t port, dmgpio_pin_t pin, int *out_used ))
+{
+    if (port >= STM32F7_GPIO_PORT_COUNT || pin > 15U || out_used == NULL) return -1;
+    *out_used = (pin_used_mask[port] & (1U << pin)) ? 1 : 0;
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _write_data,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t data ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL) return -1;
+    uint32_t set_bits   = (uint32_t)(pins &  data);
+    uint32_t reset_bits = (uint32_t)(pins & ~data);
+    gpio->BSRR = set_bits | (reset_bits << 16U);
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _read_data,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t *out_data ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL || out_data == NULL) return -1;
+    *out_data = (dmgpio_pins_mask_t)(gpio->IDR & pins);
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, dmgpio_pins_mask_t, _get_high_state_pins,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL) return 0;
+    return (dmgpio_pins_mask_t)(gpio->IDR & pins);
+}
+
+dmod_dmgpio_port_api_declaration(1.0, dmgpio_pins_mask_t, _get_low_state_pins,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL) return 0;
+    return (dmgpio_pins_mask_t)(pins & ~gpio->IDR);
+}
+
+dmod_dmgpio_port_api_declaration(1.0, void, _set_pins_state,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_state_t state ))
+{
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL) return;
+    if (state == dmgpio_pins_state_all_high)
+        gpio->BSRR = (uint32_t)pins;
     else
-    {
-        gpio->BSRR = GPIO_BSRR_RESET(pin);
-    }
+        gpio->BSRR = (uint32_t)pins << 16U;
 }
 
-/**
- * @brief Toggle the state of a GPIO pin
- *
- * @param port GPIO port index (0=GPIOA, 1=GPIOB, ...)
- * @param pin GPIO pin number (0-15)
- */
-dmod_dmgpio_port_api_declaration(1.0, void, _toggle_pin, ( dmgpio_port_t port, dmgpio_pin_t pin ))
+dmod_dmgpio_port_api_declaration(1.0, void, _toggle_pins_state,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
 {
-    GPIO_TypeDef* gpio = get_gpio(port);
-    if (gpio == NULL || pin > 15U)
-    {
-        return;
-    }
-    gpio->ODR ^= GPIO_PIN_MASK(pin);
+    GPIO_TypeDef *gpio = get_gpio(port);
+    if (gpio == NULL) return;
+    uint32_t odr_val    = gpio->ODR;
+    uint32_t set_bits   = (~odr_val) & pins;
+    uint32_t reset_bits = odr_val    & pins;
+    gpio->BSRR = set_bits | (reset_bits << 16U);
 }

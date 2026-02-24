@@ -2,70 +2,129 @@
 #define DMGPIO_H
 
 #include <stdint.h>
-#include "dmod.h"
-#include "dmgpio_defs.h"
 
 /**
- * @brief GPIO pin mode
+ * @brief GPIO port index type (0=GPIOA, 1=GPIOB, ...)
+ */
+typedef uint8_t dmgpio_port_t;
+
+/**
+ * @brief GPIO pin number type (0-15)
+ */
+typedef uint8_t dmgpio_pin_t;
+
+/**
+ * @brief Protection for special pins (e.g. JTAG, NMI)
  */
 typedef enum
 {
-    dmgpio_mode_input = 0,      /**< Input mode */
-    dmgpio_mode_output_pp,      /**< Output push-pull mode */
-    dmgpio_mode_output_od,      /**< Output open-drain mode */
-    dmgpio_mode_af_pp,          /**< Alternate function push-pull mode */
-    dmgpio_mode_af_od,          /**< Alternate function open-drain mode */
-    dmgpio_mode_analog,         /**< Analog mode */
-} dmgpio_mode_t;
-
-/**
- * @brief GPIO pin pull resistor configuration
- */
-typedef enum
-{
-    dmgpio_pull_none = 0,       /**< No pull resistor */
-    dmgpio_pull_up,             /**< Pull-up resistor */
-    dmgpio_pull_down,           /**< Pull-down resistor */
-} dmgpio_pull_t;
+    dmgpio_protection_dont_unlock_protected_pins,   /**< Do not configure special pins */
+    dmgpio_protection_unlock_protected_pins         /**< Configure special pins */
+} dmgpio_protection_t;
 
 /**
  * @brief GPIO output speed
  */
 typedef enum
 {
-    dmgpio_speed_low = 0,       /**< Low speed */
-    dmgpio_speed_medium,        /**< Medium speed */
-    dmgpio_speed_high,          /**< High speed */
-    dmgpio_speed_very_high,     /**< Very high speed */
+    dmgpio_speed_default = 0,       /**< Default speed (not changed) */
+    dmgpio_speed_minimum,           /**< Minimum speed */
+    dmgpio_speed_medium,            /**< Medium speed */
+    dmgpio_speed_maximum,           /**< Maximum speed */
+    dmgpio_speed_number_of_elements /**< Number of elements */
 } dmgpio_speed_t;
 
 /**
- * @brief GPIO pin state
+ * @brief GPIO output current
  */
 typedef enum
 {
-    dmgpio_pin_reset = 0,       /**< Pin is low */
-    dmgpio_pin_set,             /**< Pin is high */
-} dmgpio_pin_state_t;
+    dmgpio_current_default = 0,     /**< Default current (not changed) */
+    dmgpio_current_minimum,         /**< Minimum current */
+    dmgpio_current_medium,          /**< Medium current */
+    dmgpio_current_maximum          /**< Maximum current */
+} dmgpio_current_t;
+
+/**
+ * @brief GPIO pin mode
+ */
+typedef enum
+{
+    dmgpio_mode_default = 0,        /**< Default mode (not changed) */
+    dmgpio_mode_input,              /**< Input mode */
+    dmgpio_mode_output,             /**< Output mode */
+    dmgpio_mode_alternate           /**< Alternate function mode */
+} dmgpio_mode_t;
+
+/**
+ * @brief GPIO pull resistor configuration
+ */
+typedef enum
+{
+    dmgpio_pull_default = 0,        /**< Default pull (not changed) */
+    dmgpio_pull_up,                 /**< Pull-up resistor */
+    dmgpio_pull_down                /**< Pull-down resistor */
+} dmgpio_pull_t;
+
+/**
+ * @brief GPIO output circuit type
+ */
+typedef enum
+{
+    dmgpio_output_circuit_default = 0,  /**< Default (not changed) */
+    dmgpio_output_circuit_open_drain,   /**< Open-drain output */
+    dmgpio_output_circuit_push_pull     /**< Push-pull output */
+} dmgpio_output_circuit_t;
+
+/**
+ * @brief GPIO interrupt trigger source
+ */
+typedef enum
+{
+    dmgpio_int_trigger_default      = 0,                        /**< Default (not changed) */
+    dmgpio_int_trigger_off          = 0,                        /**< Interrupts disabled */
+    dmgpio_int_trigger_rising_edge  = (1 << 0),                 /**< Rising edge */
+    dmgpio_int_trigger_falling_edge = (1 << 1),                 /**< Falling edge */
+    dmgpio_int_trigger_both_edges   = (1 << 0) | (1 << 1),     /**< Both edges */
+    dmgpio_int_trigger_high_level   = (1 << 2),                 /**< High level */
+    dmgpio_int_trigger_low_level    = (1 << 3),                 /**< Low level */
+    dmgpio_int_trigger_both_levels  = (1 << 2) | (1 << 3)      /**< Both levels */
+} dmgpio_int_trigger_t;
+
+/**
+ * @brief GPIO pins state (all low / all high)
+ */
+typedef enum
+{
+    dmgpio_pins_state_all_low  = 0,     /**< All selected pins set to low */
+    dmgpio_pins_state_all_high          /**< All selected pins set to high */
+} dmgpio_pins_state_t;
 
 /**
  * @brief IOCTL commands for DMGPIO device
  */
 typedef enum
 {
-    dmgpio_ioctl_cmd_get_state = 1,     /**< Get current pin state */
-    dmgpio_ioctl_cmd_set_state,         /**< Set pin state */
-    dmgpio_ioctl_cmd_toggle,            /**< Toggle pin state */
-    dmgpio_ioctl_cmd_get_mode,          /**< Get pin mode */
-    dmgpio_ioctl_cmd_set_mode,          /**< Set pin mode */
-    dmgpio_ioctl_cmd_get_pull,          /**< Get pull resistor configuration */
-    dmgpio_ioctl_cmd_set_pull,          /**< Set pull resistor configuration */
-    dmgpio_ioctl_cmd_get_speed,         /**< Get output speed */
-    dmgpio_ioctl_cmd_set_speed,         /**< Set output speed */
-    dmgpio_ioctl_cmd_reconfigure,       /**< Reconfigure pin with current settings */
-
-    dmgpio_ioctl_cmd_max
-
+    dmgpio_ioctl_cmd_toggle_pins,           /**< Toggle pins state */
+    dmgpio_ioctl_cmd_set_pins_state,        /**< Set new pins state */
+    dmgpio_ioctl_cmd_get_high_pins_state,   /**< Read pins that are in high state */
+    dmgpio_ioctl_cmd_get_low_pins_state     /**< Read pins that are in low state */
 } dmgpio_ioctl_cmd_t;
 
-#endif // DMGPIO_H
+/**
+ * @brief GPIO driver configuration structure
+ */
+typedef struct
+{
+    dmgpio_port_t           port;               /**< GPIO port index (0=A, 1=B, ...) */
+    dmgpio_pin_t            pin;                /**< GPIO pin number (0-15) */
+    dmgpio_protection_t     protection;         /**< Protection for special pins */
+    dmgpio_speed_t          speed;              /**< Maximum switching speed */
+    dmgpio_current_t        current;            /**< Maximum output current */
+    dmgpio_mode_t           mode;               /**< Pin direction mode */
+    dmgpio_pull_t           pull;               /**< Pull-up/pull-down selection */
+    dmgpio_output_circuit_t output_circuit;     /**< Output circuit type */
+    dmgpio_int_trigger_t    interrupt_trigger;  /**< Interrupt trigger source */
+} dmgpio_config_t;
+
+#endif /* DMGPIO_H */
