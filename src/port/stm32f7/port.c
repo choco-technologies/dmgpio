@@ -36,37 +36,37 @@ int dmod_deinit(void)
  *  registered dmgpio interrupt handler.
  * ====================================================================== */
 
-DMOD_IRQ_HANDLER(EXTI0_IRQHandler)
+DMOD_IRQ_HANDLER(6)  /* EXTI0 */
 {
     stm32_gpio_exti_irq_handler(0x0001UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI1_IRQHandler)
+DMOD_IRQ_HANDLER(7)  /* EXTI1 */
 {
     stm32_gpio_exti_irq_handler(0x0002UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI2_IRQHandler)
+DMOD_IRQ_HANDLER(8)  /* EXTI2 */
 {
     stm32_gpio_exti_irq_handler(0x0004UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI3_IRQHandler)
+DMOD_IRQ_HANDLER(9)  /* EXTI3 */
 {
     stm32_gpio_exti_irq_handler(0x0008UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI4_IRQHandler)
+DMOD_IRQ_HANDLER(10)  /* EXTI4 */
 {
     stm32_gpio_exti_irq_handler(0x0010UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI9_5_IRQHandler)
+DMOD_IRQ_HANDLER(23)  /* EXTI9_5 */
 {
     stm32_gpio_exti_irq_handler(0x03E0UL);
 }
 
-DMOD_IRQ_HANDLER(EXTI15_10_IRQHandler)
+DMOD_IRQ_HANDLER(40)  /* EXTI15_10 */
 {
     stm32_gpio_exti_irq_handler(0xFC00UL);
 }
