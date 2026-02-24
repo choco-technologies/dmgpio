@@ -1,8 +1,8 @@
 #define DMOD_ENABLE_REGISTRATION    ON
+#include "dmod.h"
 #include "dmgpio.h"
-#include "dmdrvi.h"
-#include "dmini.h"
 #include "dmgpio_port.h"
+#include "dmdrvi.h"
 #include <errno.h>
 #include <string.h>
 
@@ -390,8 +390,31 @@ static int configure(dmdrvi_context_t ctx)
     return 0;
 }
 
-/* ---- DMDRVI interface ---- */
+/**
+ * @brief Initialize the DMDRVI module
+ * 
+ * @param Config Pointer to Dmod_Config_t structure with configuration parameters
+ * 
+ * @return int 0 on success, non-zero on failure
+ */
+int dmod_init(const Dmod_Config_t *Config)
+{
+    Dmod_Printf("DMGPIO module initialized (STM32F7)\n");
+    return 0;
+}
 
+/**
+ * @brief Deinitialize the DMDRVI module
+ * 
+ * @return int 0 on success, non-zero on failure
+ */
+int dmod_deinit(void)
+{
+    Dmod_Printf("DMGPIO module deinitialized (STM32F7)\n");
+    return 0;
+}
+
+/* ---- DMDRVI interface ---- */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
     ( dmini_context_t config, dmdrvi_dev_num_t* dev_num ))
 {

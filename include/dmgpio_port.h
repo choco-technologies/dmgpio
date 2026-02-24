@@ -1,6 +1,9 @@
 #ifndef DMGPIO_PORT_H
 #define DMGPIO_PORT_H
 
+#include "dmod_types.h"
+#include "dmgpio_port.h"
+#include "dmgpio_port_defs.h"
 #include "dmgpio_types.h"
 
 /* --- Driver interrupt handler --- */
@@ -45,14 +48,14 @@ dmod_dmgpio_port_api(1.0, int,  _check_is_pin_used,( dmgpio_port_t port, dmgpio_
 
 /* --- Data read/write --- */
 
-dmod_dmgpio_port_api(1.0, int,               _write_data,          ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t data ));
-dmod_dmgpio_port_api(1.0, int,               _read_data,           ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t *out_data ));
+dmod_dmgpio_port_api(1.0, int,  _write_data,          ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t data ));
+dmod_dmgpio_port_api(1.0, int,  _read_data,           ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_mask_t *out_data ));
 
 /* --- Pin state operations (no argument checking, must ensure correct pins) --- */
 
 dmod_dmgpio_port_api(1.0, dmgpio_pins_mask_t, _get_high_state_pins, ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
 dmod_dmgpio_port_api(1.0, dmgpio_pins_mask_t, _get_low_state_pins,  ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
-dmod_dmgpio_port_api(1.0, void,               _set_pins_state,      ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_state_t state ));
-dmod_dmgpio_port_api(1.0, void,               _toggle_pins_state,   ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
+dmod_dmgpio_port_api(1.0, void, _set_pins_state,      ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_state_t state ));
+dmod_dmgpio_port_api(1.0, void, _toggle_pins_state,   ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
 
-#endif /* DMGPIO_PORT_H */
+#endif // DMGPIO_PORT_H

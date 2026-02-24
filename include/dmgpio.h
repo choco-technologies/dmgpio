@@ -1,6 +1,7 @@
 #ifndef DMGPIO_H
 #define DMGPIO_H
 
+#include "dmgpio_defs.h"
 #include "dmgpio_types.h"
 
 /**
@@ -20,4 +21,4 @@ typedef struct
     dmgpio_interrupt_handler_t  interrupt_handler;  /**< Interrupt handler (NULL = not used) */
 } dmgpio_config_t;
 
-#endif /* DMGPIO_H */
+#endif // DMGPIO_H
