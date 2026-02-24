@@ -115,17 +115,37 @@ typedef enum
     dmgpio_ioctl_cmd_set_pins_state,            /**< Set new pins state */
     dmgpio_ioctl_cmd_get_high_pins_state,       /**< Read pins that are in high state */
     dmgpio_ioctl_cmd_get_low_pins_state,        /**< Read pins that are in low state */
-    dmgpio_ioctl_cmd_set_interrupt_handler      /**< Set interrupt handler; arg = dmgpio_interrupt_handler_t* */
+    dmgpio_ioctl_cmd_set_interrupt_handler      /**< Add an interrupt handler; arg = dmgpio_interrupt_handler_t* */
 } dmgpio_ioctl_cmd_t;
+
+/**
+ * @brief Opaque driver context type (forward declaration)
+ *
+ * The concrete definition is private to the dmgpio driver.
+ */
+struct dmdrvi_context;
+typedef struct dmdrvi_context *dmdrvi_context_t;
 
 /**
  * @brief GPIO interrupt handler function type
  *
  * Called when an interrupt occurs on a GPIO pin.
  *
+ * @param context   Context of the driver instance
+ * @param port      Port on which the interrupt occurred
+ * @param pins      Bitmask of pins that caused the interrupt
+ */
+typedef void (*dmgpio_interrupt_handler_t)(dmdrvi_context_t context, dmgpio_port_t port, dmgpio_pins_mask_t pins);
+
+/**
+ * @brief GPIO port interrupt handler function type
+ *
+ * Called by the port layer when an interrupt occurs on a GPIO pin.
+ * Registered by the dmgpio driver in the dmgpio_port layer.
+ *
  * @param port   Port on which the interrupt occurred
  * @param pins   Bitmask of pins that caused the interrupt
  */
-typedef void (*dmgpio_interrupt_handler_t)(dmgpio_port_t port, dmgpio_pins_mask_t pins);
+typedef void (*dmgpio_port_interrupt_handler_t)(dmgpio_port_t port, dmgpio_pins_mask_t pins);
 
 #endif /* DMGPIO_TYPES_H */

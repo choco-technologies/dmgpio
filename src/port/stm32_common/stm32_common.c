@@ -6,8 +6,8 @@
 /** Bitmask of pins currently in use, indexed by port number. */
 static dmgpio_pins_mask_t s_pins_used[STM32_MAX_PORTS] = {0};
 
-/** Registered GPIO interrupt handler (NULL if not set). */
-static dmgpio_interrupt_handler_t s_interrupt_handler = NULL;
+/** Registered GPIO port interrupt handler (NULL if not set). */
+static dmgpio_port_interrupt_handler_t s_interrupt_handler = NULL;
 
 /* ---- Internal helpers ---- */
 
@@ -88,7 +88,7 @@ static uint32_t exti_pin_to_irqn(int pin)
  * ====================================================================== */
 
 dmod_dmgpio_port_api_declaration(1.0, int, _set_driver_interrupt_handler,
-    ( dmgpio_interrupt_handler_t handler ))
+    ( dmgpio_port_interrupt_handler_t handler ))
 {
     s_interrupt_handler = handler;
     return 0;
