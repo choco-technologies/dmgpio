@@ -35,8 +35,7 @@ static dmgpio_interrupt_handler_t interrupt_handler = NULL;
 
 static GPIO_TypeDef *get_gpio(dmgpio_port_t port)
 {
-    if (port >= STM32F4_GPIO_PORT_COUNT) return NULL;
-    return (GPIO_TypeDef *)gpio_base_addresses[port];
+    return port < STM32F4_GPIO_PORT_COUNT ? (GPIO_TypeDef *)gpio_base_addresses[port] : NULL;
 }
 
 /**
@@ -141,16 +140,16 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_power,
     return 0;
 }
 
-dmod_dmgpio_port_api_declaration(1.0, int, _is_pin_protected,
+dmod_dmgpio_port_api_declaration(1.0, bool, _are_pins_protected,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
 {
     GPIO_TypeDef *gpio = get_gpio(port);
     if (gpio == NULL || pins == 0)
     {
-        DMOD_LOG_ERROR("Invalid port or pins in is_pin_protected\n");
-        return -1;
+        DMOD_LOG_ERROR("Invalid port or pins in are_pins_protected\n");
+        return false;
     }
-    return (gpio->LCKR & pins) ? 1 : 0;
+    return (gpio->LCKR & pins) != 0;
 }
 
 dmod_dmgpio_port_api_declaration(1.0, int, _unlock_protection,

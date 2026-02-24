@@ -1,9 +1,7 @@
 #ifndef DMGPIO_PORT_H
 #define DMGPIO_PORT_H
 
-#include <stdint.h>
-#include <stdbool.h>
-#include "dmgpio.h"
+#include "dmgpio_types.h"
 
 /* --- Driver interrupt handler --- */
 
@@ -20,7 +18,7 @@ dmod_dmgpio_port_api(1.0, int,  _set_power, ( dmgpio_port_t port, int power_on )
 
 /* --- Pin protection --- */
 
-dmod_dmgpio_port_api(1.0, int,  _is_pin_protected,   ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
+dmod_dmgpio_port_api(1.0, bool, _are_pins_protected, ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
 dmod_dmgpio_port_api(1.0, int,  _unlock_protection,  ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_protection_t protection ));
 dmod_dmgpio_port_api(1.0, int,  _lock_protection,    ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
 

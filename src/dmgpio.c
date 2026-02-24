@@ -4,7 +4,6 @@
 #include "dmini.h"
 #include "dmgpio_port.h"
 #include <errno.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* Magic set to DGPIO */
@@ -162,6 +161,57 @@ static const char *port_to_string(dmgpio_port_t port)
 /* ---- Configuration helpers ---- */
 
 /**
+ * @brief Parse a decimal or hex (0x-prefixed) unsigned integer string.
+ *
+ * @param s       Null-terminated input string (must not be NULL).
+ * @param out_val Receives the parsed value on success.
+ * @return 0 on success, -1 on parse error or overflow (value > ULONG_MAX/UINT16_MAX).
+ *
+ * Note: overflow is detected conservatively — parsing stops with an error if the
+ * accumulated value would exceed 0xFFFF, which is sufficient for pin-mask values.
+ */
+static int parse_uint(const char *s, unsigned long *out_val)
+{
+    if (s == NULL || *s == '\0') return -1;
+
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+    {
+        /* Hex */
+        const char *p = s + 2;
+        if (*p == '\0') return -1;
+        unsigned long v = 0;
+        for (; *p != '\0'; p++)
+        {
+            unsigned char c = (unsigned char)*p;
+            unsigned long digit;
+            if (c >= '0' && c <= '9')      digit = (unsigned long)(c - '0');
+            else if (c >= 'a' && c <= 'f') digit = (unsigned long)(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') digit = (unsigned long)(c - 'A' + 10);
+            else return -1;
+            if (v > (0xFFFFUL >> 4U)) return -1; /* overflow guard */
+            v = (v << 4U) | digit;
+        }
+        *out_val = v;
+        return 0;
+    }
+
+    /* Decimal */
+    const char *p = s;
+    if (*p == '\0') return -1;
+    unsigned long v = 0;
+    for (; *p != '\0'; p++)
+    {
+        unsigned char c = (unsigned char)*p;
+        if (c < '0' || c > '9') return -1;
+        if (v > (0xFFFFUL / 10U)) return -1; /* overflow guard */
+        v = v * 10U + (unsigned long)(c - '0');
+        if (v > 0xFFFFUL) return -1;
+    }
+    *out_val = v;
+    return 0;
+}
+
+/**
  * @brief Parse the section name to resolve port and pins configuration.
  *
  * Supports two formats:
@@ -181,16 +231,15 @@ static int read_port_and_pins(dmini_context_t ini, const char *section,
 
         if (port_ptr[0] >= 'A' && port_ptr[0] <= 'K' && port_ptr[1] != '\0')
         {
-            char *endptr = NULL;
-            long pin_num = strtol(port_ptr + 1, &endptr, 10);
-            if (*endptr != '\0' || pin_num < 0 || pin_num > 15)
+            unsigned long pin_num;
+            if (parse_uint(port_ptr + 1, &pin_num) != 0 || pin_num > 15)
             {
                 DMOD_LOG_ERROR("Invalid pin in '%s' config 'pin=%s' (expected PA0-PK15 or A0-K15)\n",
                     section, pin_str);
                 return -EINVAL;
             }
             *out_port = (dmgpio_port_t)(port_ptr[0] - 'A');
-            *out_pins = (dmgpio_pins_mask_t)(1U << (int)pin_num);
+            *out_pins = (dmgpio_pins_mask_t)(1U << pin_num);
             return 0;
         }
     }
@@ -209,10 +258,8 @@ static int read_port_and_pins(dmini_context_t ini, const char *section,
         DMOD_LOG_ERROR("Missing 'pins' in [%s] config\n", section);
         return -EINVAL;
     }
-    /* strtol with base 0 auto-detects hex (0x) and decimal */
-    char *endptr = NULL;
-    long pins_val = strtol(pins_str, &endptr, 0);
-    if (endptr == pins_str || *endptr != '\0' || pins_val < 1 || pins_val > 0xFFFF)
+    unsigned long pins_val;
+    if (parse_uint(pins_str, &pins_val) != 0 || pins_val < 1 || pins_val > 0xFFFF)
     {
         DMOD_LOG_ERROR("Invalid 'pins' in [%s] config (must be 1-0xFFFF bitmask)\n", section);
         return -EINVAL;
@@ -234,12 +281,12 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
         return -EINVAL;
     }
 
-    ctx->config.pull             = string_to_pull(dmini_get_string(ini, "dmgpio", "pull", NULL));
-    ctx->config.speed            = string_to_speed(dmini_get_string(ini, "dmgpio", "speed", NULL));
-    ctx->config.output_circuit   = string_to_output_circuit(dmini_get_string(ini, "dmgpio", "output_circuit", NULL));
-    ctx->config.current          = string_to_current(dmini_get_string(ini, "dmgpio", "current", NULL));
-    ctx->config.protection       = string_to_protection(dmini_get_string(ini, "dmgpio", "protection", NULL));
-    ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, "dmgpio", "interrupt_trigger", NULL));
+    ctx->config.pull             = string_to_pull(dmini_get_string(ini, "dmgpio", "pull", "none"));
+    ctx->config.speed            = string_to_speed(dmini_get_string(ini, "dmgpio", "speed", "default"));
+    ctx->config.output_circuit   = string_to_output_circuit(dmini_get_string(ini, "dmgpio", "output_circuit", "default"));
+    ctx->config.current          = string_to_current(dmini_get_string(ini, "dmgpio", "current", "default"));
+    ctx->config.protection       = string_to_protection(dmini_get_string(ini, "dmgpio", "protection", "dont_unlock"));
+    ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, "dmgpio", "interrupt_trigger", "off"));
     ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
     return 0;
@@ -292,48 +339,36 @@ static int configure(dmdrvi_context_t ctx)
         return ret;
     }
 
-    if (c->speed != dmgpio_speed_default)
+    ret = dmgpio_port_set_speed(c->port, c->pins, c->speed);
+    if (ret != 0)
     {
-        ret = dmgpio_port_set_speed(c->port, c->pins, c->speed);
-        if (ret != 0)
-        {
-            DMOD_LOG_ERROR("Failed to set speed for GPIO port %s pins 0x%04X\n",
-                port_to_string(c->port), (unsigned)c->pins);
-            return ret;
-        }
+        DMOD_LOG_ERROR("Failed to set speed for GPIO port %s pins 0x%04X\n",
+            port_to_string(c->port), (unsigned)c->pins);
+        return ret;
     }
 
-    if (c->output_circuit != dmgpio_output_circuit_default)
+    ret = dmgpio_port_set_output_circuit(c->port, c->pins, c->output_circuit);
+    if (ret != 0)
     {
-        ret = dmgpio_port_set_output_circuit(c->port, c->pins, c->output_circuit);
-        if (ret != 0)
-        {
-            DMOD_LOG_ERROR("Failed to set output circuit for GPIO port %s pins 0x%04X\n",
-                port_to_string(c->port), (unsigned)c->pins);
-            return ret;
-        }
+        DMOD_LOG_ERROR("Failed to set output circuit for GPIO port %s pins 0x%04X\n",
+            port_to_string(c->port), (unsigned)c->pins);
+        return ret;
     }
 
-    if (c->current != dmgpio_current_default)
+    ret = dmgpio_port_set_current(c->port, c->pins, c->current);
+    if (ret != 0)
     {
-        ret = dmgpio_port_set_current(c->port, c->pins, c->current);
-        if (ret != 0)
-        {
-            DMOD_LOG_ERROR("Failed to set current for GPIO port %s pins 0x%04X\n",
-                port_to_string(c->port), (unsigned)c->pins);
-            return ret;
-        }
+        DMOD_LOG_ERROR("Failed to set current for GPIO port %s pins 0x%04X\n",
+            port_to_string(c->port), (unsigned)c->pins);
+        return ret;
     }
 
-    if (c->interrupt_trigger != dmgpio_int_trigger_off)
+    ret = dmgpio_port_set_interrupt_trigger(c->port, c->pins, c->interrupt_trigger);
+    if (ret != 0)
     {
-        ret = dmgpio_port_set_interrupt_trigger(c->port, c->pins, c->interrupt_trigger);
-        if (ret != 0)
-        {
-            DMOD_LOG_ERROR("Failed to set interrupt trigger for GPIO port %s pins 0x%04X\n",
-                port_to_string(c->port), (unsigned)c->pins);
-            return ret;
-        }
+        DMOD_LOG_ERROR("Failed to set interrupt trigger for GPIO port %s pins 0x%04X\n",
+            port_to_string(c->port), (unsigned)c->pins);
+        return ret;
     }
 
     ret = dmgpio_port_finish_configuration(c->port, c->pins);
