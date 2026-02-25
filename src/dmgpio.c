@@ -525,7 +525,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
 }
 
 /**
- * @brief Read: returns bitmask of pins currently in high state
+ * @brief Read: returns hex bitmask of pins currently in high state, e.g. "0x000A"
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
     ( dmdrvi_context_t context, void* handle, void* buffer, size_t size ))
@@ -536,16 +536,13 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
     dmgpio_pins_mask_t high_pins = dmgpio_port_get_high_state_pins(
         context->config.port, context->config.pins);
 
-    int written = Dmod_SnPrintf(buffer, size,
-        "port=%s;pins=0x%04X;high_pins=0x%04X",
-        port_to_string(context->config.port),
-        (unsigned)context->config.pins,
-        (unsigned)high_pins);
+    int written = Dmod_SnPrintf(buffer, size, "0x%04X", (unsigned)high_pins);
     return (written > 0) ? (size_t)written : 0;
 }
 
 /**
- * @brief Write: buffer[0]='0' → low, otherwise → high
+ * @brief Write: accepts a decimal or hex (0x-prefixed) pin-state bitmask string,
+ *        e.g. "0x000A" or "10", and sets the configured pins accordingly.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
     ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size ))
@@ -553,10 +550,21 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
     if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
 
-    const char *data = (const char *)buffer;
-    dmgpio_pins_state_t state = (data[0] == '0') ?
-        dmgpio_pins_state_all_low : dmgpio_pins_state_all_high;
-    dmgpio_port_set_pins_state(context->config.port, context->config.pins, state);
+    /* Ensure null-terminated copy for parsing */
+    char tmp[8];
+    size_t copy_len = (size < sizeof(tmp) - 1) ? size : sizeof(tmp) - 1;
+    memcpy(tmp, buffer, copy_len);
+    tmp[copy_len] = '\0';
+
+    unsigned long val;
+    if (parse_uint(tmp, &val) != 0)
+    {
+        DMOD_LOG_ERROR("Invalid pin state value for _write: '%s'\n", tmp);
+        return 0;
+    }
+
+    dmgpio_port_write_data(context->config.port, context->config.pins,
+        (dmgpio_pins_mask_t)val);
     return size;
 }
 
