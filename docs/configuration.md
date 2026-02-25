@@ -106,9 +106,9 @@ This allows any module to subscribe to the interrupt by calling `dmhaman_registe
 
 | Value | Description |
 |-------|-------------|
-| *(any string, max 63 chars)* | Handler name registered with dmhaman |
+| *(any string)* | Handler name registered with dmhaman |
 
-**Example:** `interrupt_handler=button_b1_handler`
+**Example:** `interrupt_handler=spi.cs1`
 
 > **Note:** `interrupt_handler` and a programmatically-set handler (via `ioctl dmgpio_ioctl_cmd_set_interrupt_handler`) are mutually exclusive per device instance.  The named handler configured in the INI file takes precedence.
 

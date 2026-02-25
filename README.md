@@ -11,6 +11,7 @@ A DMOD (Dynamic Modular System) module for configuring and managing GPIO (Genera
 - **Output Speed Control**: Low, medium, high, and very high slew rates
 - **Alternate Function Support**: Full alternate function configuration for peripherals (UART, SPI, I2C, etc.)
 - **Dynamic Reconfiguration**: Runtime pin configuration updates via IOCTL
+- **Interrupt Handler Binding via dmhaman**: Specify a [dmhaman](https://github.com/choco-technologies/dmhaman)-registered handler name directly in the INI config — no `ioctl` calls needed at runtime
 - **Hardware Abstraction**: Platform-independent API with hardware-specific implementations
 - **DMDRVI Integration**: Full DMOD driver interface implementation
 - **STM32 Support**: STM32F4 and STM32F7 families currently supported
@@ -182,6 +183,26 @@ speed=very_high
 alternate=7
 ```
 
+### Input Pin with dmhaman Interrupt Handler
+
+Bind an interrupt directly in the config file — no `ioctl` calls needed at runtime.  Any module that registers the same name with [dmhaman](https://github.com/choco-technologies/dmhaman) will receive the interrupt notification:
+
+```ini
+[dmgpio]
+pin=PC13
+mode=input
+pull=up
+interrupt_trigger=falling_edge
+interrupt_handler=spi.cs1
+```
+
+Subscribe from any module:
+
+```c
+// params is dmgpio_interrupt_params_t * (port, pins, state)
+dmhaman_register_handler("spi.cs1", my_callback, my_ctx);
+```
+
 ## Development
 
 ### Project Structure
@@ -234,6 +255,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [DMINI](https://github.com/choco-technologies/dmini) - INI configuration parser for DMOD
 - [DMDRVI](https://github.com/choco-technologies/dmdrvi) - DMOD Driver Interface
 - [DMCLK](https://github.com/choco-technologies/dmclk) - DMOD Clock Configuration Module
+- [DMHAMAN](https://github.com/choco-technologies/dmhaman) - DMOD Handler Manager (named interrupt/event handler registry)
 
 ## Support
 
