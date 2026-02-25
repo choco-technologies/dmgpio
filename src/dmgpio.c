@@ -8,8 +8,7 @@
 #include <string.h>
 
 /* Magic set to DGPIO */
-#define DMGPIO_CONTEXT_MAGIC        0x44475049
-#define DMGPIO_HANDLER_NAME_MAX_LEN 63
+#define DMGPIO_CONTEXT_MAGIC    0x44475049
 
 /**
  * @brief DMDRVI context structure
@@ -18,7 +17,7 @@ struct dmdrvi_context
 {
     uint32_t        magic;  /**< Magic number for validation */
     dmgpio_config_t config; /**< GPIO configuration */
-    char            interrupt_handler_name[DMGPIO_HANDLER_NAME_MAX_LEN + 1]; /**< dmhaman handler name (empty = not used) */
+    char           *interrupt_handler_name; /**< dmhaman handler name (NULL = not used) */
 };
 
 static int is_valid_context(dmdrvi_context_t context)
@@ -311,21 +310,7 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
     ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
     const char *handler_name = dmini_get_string(ini, "dmgpio", "interrupt_handler", NULL);
-    if (handler_name != NULL)
-    {
-        size_t len = strlen(handler_name);
-        if (len > DMGPIO_HANDLER_NAME_MAX_LEN)
-        {
-            DMOD_LOG_ERROR("'interrupt_handler' name in [dmgpio] config is too long (max %d chars)\n",
-                DMGPIO_HANDLER_NAME_MAX_LEN);
-            return -EINVAL;
-        }
-        memcpy(ctx->interrupt_handler_name, handler_name, len + 1);
-    }
-    else
-    {
-        ctx->interrupt_handler_name[0] = '\0';
-    }
+    ctx->interrupt_handler_name = (handler_name != NULL) ? Dmod_StrDup(handler_name) : NULL;
 
     return 0;
 }
@@ -473,13 +458,14 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    if (ctx->interrupt_handler_name[0] != '\0')
+    if (ctx->interrupt_handler_name != NULL)
     {
         if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
                 dmhaman_interrupt_handler, ctx) != 0)
         {
             DMOD_LOG_ERROR("Failed to add named interrupt handler '%s'\n",
                 ctx->interrupt_handler_name);
+            Dmod_Free(ctx->interrupt_handler_name);
             Dmod_Free(ctx);
             return NULL;
         }
@@ -499,6 +485,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
         dmgpio_port_remove_interrupt_handler(ctx->config.port, ctx);
+        Dmod_Free(ctx->interrupt_handler_name);
         Dmod_Free(ctx);
         return NULL;
     }
@@ -515,6 +502,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
         dmgpio_port_remove_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
+        Dmod_Free(context->interrupt_handler_name);
         Dmod_Free(context);
     }
 }
