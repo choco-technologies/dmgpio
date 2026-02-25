@@ -14,8 +14,8 @@
  */
 struct dmdrvi_context
 {
-    uint32_t         magic;     /**< Magic number for validation */
-    dmgpio_config_t  config;    /**< GPIO configuration */
+    uint32_t        magic;  /**< Magic number for validation */
+    dmgpio_config_t config; /**< GPIO configuration */
 };
 
 static int is_valid_context(dmdrvi_context_t context)
@@ -437,9 +437,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
 
     if (ctx->config.interrupt_handler != NULL)
     {
-        if (dmgpio_port_set_driver_interrupt_handler(ctx->config.interrupt_handler) != 0)
+        if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
+                (dmgpio_port_interrupt_handler_t)ctx->config.interrupt_handler, ctx) != 0)
         {
-            DMOD_LOG_ERROR("Failed to set interrupt handler\n");
+            DMOD_LOG_ERROR("Failed to add initial interrupt handler\n");
             Dmod_Free(ctx);
             return NULL;
         }
@@ -448,6 +449,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
     if (configure(ctx) != 0)
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
+        dmgpio_port_remove_interrupt_handler(ctx->config.port, ctx);
         Dmod_Free(ctx);
         return NULL;
     }
@@ -461,6 +463,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
 {
     if (is_valid_context(context))
     {
+        dmgpio_port_remove_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
         Dmod_Free(context);
@@ -555,17 +558,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
 
         case dmgpio_ioctl_cmd_set_interrupt_handler:
             if (arg == NULL) return -EINVAL;
-            {
-                dmgpio_interrupt_handler_t handler = *(dmgpio_interrupt_handler_t *)arg;
-                int ret = dmgpio_port_set_driver_interrupt_handler(handler);
-                if (ret != 0)
-                {
-                    DMOD_LOG_ERROR("Failed to set interrupt handler via ioctl\n");
-                    return ret;
-                }
-                context->config.interrupt_handler = handler;
-            }
-            return 0;
+            return dmgpio_port_add_interrupt_handler(
+                context->config.port, context->config.pins,
+                (dmgpio_port_interrupt_handler_t)*(dmgpio_interrupt_handler_t *)arg,
+                context);
 
         default:
             DMOD_LOG_ERROR("Unknown ioctl command %d\n", command);

@@ -6,9 +6,12 @@
 #include "dmgpio_port_defs.h"
 #include "dmgpio_types.h"
 
-/* --- Driver interrupt handler --- */
+/* --- Interrupt handlers --- */
 
-dmod_dmgpio_port_api(1.0, int,  _set_driver_interrupt_handler, ( dmgpio_interrupt_handler_t handler ));
+dmod_dmgpio_port_api(1.0, int,  _add_interrupt_handler,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_port_interrupt_handler_t handler, void *user_ptr ));
+dmod_dmgpio_port_api(1.0, int,  _remove_interrupt_handler,
+    ( dmgpio_port_t port, void *user_ptr ));
 
 /* --- Configuration session --- */
 

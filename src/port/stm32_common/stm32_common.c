@@ -6,8 +6,21 @@
 /** Bitmask of pins currently in use, indexed by port number. */
 static dmgpio_pins_mask_t s_pins_used[STM32_MAX_PORTS] = {0};
 
-/** Registered GPIO interrupt handler (NULL if not set). */
-static dmgpio_interrupt_handler_t s_interrupt_handler = NULL;
+/** Maximum number of interrupt handlers that can be registered per port.
+ *  Each dmgpio context that uses interrupts on a given port occupies one slot.
+ *  Increase this value if more than 8 contexts share the same port. */
+#define STM32_PORT_MAX_IRQ_HANDLERS  8U
+
+/** Per-port interrupt handler entry (handler function + opaque user pointer). */
+typedef struct
+{
+    dmgpio_port_interrupt_handler_t handler;
+    void                           *user_ptr;
+    dmgpio_pins_mask_t              pins;
+} stm32_port_irq_entry_t;
+
+/** Per-port arrays of registered interrupt handlers. */
+static stm32_port_irq_entry_t s_port_handlers[STM32_MAX_PORTS][STM32_PORT_MAX_IRQ_HANDLERS];
 
 /* ---- Internal helpers ---- */
 
@@ -87,10 +100,34 @@ static uint32_t exti_pin_to_irqn(int pin)
  *  Driver interrupt handler
  * ====================================================================== */
 
-dmod_dmgpio_port_api_declaration(1.0, int, _set_driver_interrupt_handler,
-    ( dmgpio_interrupt_handler_t handler ))
+dmod_dmgpio_port_api_declaration(1.0, int, _add_interrupt_handler,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_port_interrupt_handler_t handler, void *user_ptr ))
 {
-    s_interrupt_handler = handler;
+    if (!is_valid_port(port) || handler == NULL) return -1;
+    for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
+    {
+        if (s_port_handlers[port][i].handler == NULL)
+        {
+            s_port_handlers[port][i].handler  = handler;
+            s_port_handlers[port][i].user_ptr = user_ptr;
+            s_port_handlers[port][i].pins     = pins;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _remove_interrupt_handler,
+    ( dmgpio_port_t port, void *user_ptr ))
+{
+    if (!is_valid_port(port)) return -1;
+    for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
+    {
+        if (s_port_handlers[port][i].user_ptr == user_ptr)
+        {
+            s_port_handlers[port][i].handler = NULL;
+        }
+    }
     return 0;
 }
 
@@ -508,21 +545,35 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
 {
     volatile stm32_exti_t *exti = STM32_EXTI;
     uint32_t pending = exti->PR & exti_lines;
-    exti->PR = pending; /* Writing 1 clears the pending bit. */
 
-    if (s_interrupt_handler == NULL || pending == 0U) return;
+    if (pending == 0U) return;
 
+    /* Map each pending EXTI line to its owning GPIO port and accumulate masks. */
+    dmgpio_pins_mask_t port_pending[STM32_MAX_PORTS] = {0};
     for (int pin = 0; pin < 16; pin++)
     {
         if (!(pending & (1U << (uint32_t)pin))) continue;
-
-        /* Determine which GPIO port owns this EXTI line from SYSCFG_EXTICR. */
         uint32_t exticr_idx   = (uint32_t)pin / 4U;
         uint32_t exticr_shift = ((uint32_t)pin % 4U) * 4U;
-        dmgpio_port_t port = (dmgpio_port_t)
+        dmgpio_port_t port    = (dmgpio_port_t)
             ((STM32_SYSCFG_EXTICR[exticr_idx] >> exticr_shift) & 0xFU);
-
-        s_interrupt_handler(port, (dmgpio_pins_mask_t)(1U << pin));
+        port_pending[port] |= (dmgpio_pins_mask_t)(1U << pin);
     }
+
+    /* Dispatch: one pass per port, one pass per handler — no per-pin inner loop. */
+    for (dmgpio_port_t port = 0; port < STM32_MAX_PORTS; port++)
+    {
+        if (port_pending[port] == 0U) continue;
+        dmgpio_pins_mask_t state = (dmgpio_pins_mask_t)(STM32_GPIO(port)->IDR & (uint32_t)port_pending[port]);
+        for (uint8_t i = 0; i < STM32_PORT_MAX_IRQ_HANDLERS; i++)
+        {
+            dmgpio_pins_mask_t match = s_port_handlers[port][i].pins & port_pending[port];
+            if (s_port_handlers[port][i].handler != NULL && match)
+                s_port_handlers[port][i].handler(s_port_handlers[port][i].user_ptr,
+                                                 port, match, state);
+        }
+    }
+
+    exti->PR = pending; /* Writing 1 clears the pending bit. */
 }
 
