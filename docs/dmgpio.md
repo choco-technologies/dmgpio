@@ -52,8 +52,8 @@ DMGPIO implements the full DMDRVI interface:
 | `dmgpio_dmdrvi_free` | Free the device context and deinitialize the pin |
 | `dmgpio_dmdrvi_open` | Open a handle to the GPIO device |
 | `dmgpio_dmdrvi_close` | Close the device handle |
-| `dmgpio_dmdrvi_read` | Read device state as formatted string |
-| `dmgpio_dmdrvi_write` | Write pin state ("0" = reset, other = set) |
+| `dmgpio_dmdrvi_read` | Read high-state pin bitmask as hex string, e.g. `"0x000A"` |
+| `dmgpio_dmdrvi_write` | Write pin states via decimal/hex bitmask string, e.g. `"0x000A"` or `"10"` |
 | `dmgpio_dmdrvi_ioctl` | Control and query pin state and configuration |
 | `dmgpio_dmdrvi_flush` | Flush (no-op for GPIO) |
 | `dmgpio_dmdrvi_stat` | Get device statistics |

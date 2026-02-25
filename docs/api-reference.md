@@ -134,7 +134,7 @@ void dmgpio_dmdrvi_close(dmdrvi_context_t context, void* handle);
 
 ### `dmgpio_dmdrvi_read`
 
-Read current device state as a formatted string.
+Read the current high-state pin bitmask as a hex string.
 
 ```c
 size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size);
@@ -142,8 +142,10 @@ size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, 
 
 **Output format:**
 ```
-port=<A-K>;pin=<0-15>;state=<0|1>;mode=<mode>;pull=<pull>;speed=<speed>
+0x<XXXX>
 ```
+
+For example `"0x000A"` means pins 1 and 3 are currently high.
 
 **Returns:** Number of bytes written to `buffer`.
 
@@ -151,13 +153,16 @@ port=<A-K>;pin=<0-15>;state=<0|1>;mode=<mode>;pull=<pull>;speed=<speed>
 
 ### `dmgpio_dmdrvi_write`
 
-Write pin state by passing a string to the device.
+Write the desired high-state pin bitmask to the device.
 
 ```c
 size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size);
 ```
 
-Writing `"0"` resets the pin; any other value sets it.
+Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Each bit in the
+value corresponds to a pin within the configured `pins` mask: a `1` sets
+the pin high, a `0` sets it low.  The output of `dmgpio_dmdrvi_read` can
+be passed directly as input to `dmgpio_dmdrvi_write`.
 
 ---
 
