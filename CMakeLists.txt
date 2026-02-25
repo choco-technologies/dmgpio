@@ -95,6 +95,7 @@ dmod_add_library(${DMOD_MODULE_NAME} ${DMOD_MODULE_VERSION}
 dmod_link_modules(${DMOD_MODULE_NAME}
     dmdrvi
     dmini
+    dmhaman
 )
 
 target_link_libraries(${DMOD_MODULE_NAME}
