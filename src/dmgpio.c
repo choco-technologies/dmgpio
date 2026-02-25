@@ -3,6 +3,7 @@
 #include "dmgpio.h"
 #include "dmgpio_port.h"
 #include "dmdrvi.h"
+#include "dmhaman.h"
 #include <errno.h>
 #include <string.h>
 
@@ -16,11 +17,30 @@ struct dmdrvi_context
 {
     uint32_t        magic;  /**< Magic number for validation */
     dmgpio_config_t config; /**< GPIO configuration */
+    char           *interrupt_handler_name; /**< dmhaman handler name (NULL = not used) */
 };
 
 static int is_valid_context(dmdrvi_context_t context)
 {
     return (context != NULL && context->magic == DMGPIO_CONTEXT_MAGIC);
+}
+
+/**
+ * @brief Internal port interrupt handler that dispatches to a dmhaman-registered handler.
+ *
+ * Packs port/pins/state into a dmgpio_interrupt_params_t and calls
+ * dmhaman_call_handler() so that any module that registered a handler
+ * under the configured name receives the interrupt notification.
+ */
+static void dmhaman_interrupt_handler(void *user_ptr, dmgpio_port_t port,
+                                       dmgpio_pins_mask_t pins, dmgpio_pins_mask_t state)
+{
+    dmdrvi_context_t ctx = (dmdrvi_context_t)user_ptr;
+    dmgpio_interrupt_params_t params;
+    params.port  = port;
+    params.pins  = pins;
+    params.state = state;
+    dmhaman_call_handler(ctx->interrupt_handler_name, &params);
 }
 
 /* ---- String helpers ---- */
@@ -289,6 +309,9 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
     ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, "dmgpio", "interrupt_trigger", "off"));
     ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
+    const char *handler_name = dmini_get_string(ini, "dmgpio", "interrupt_handler", NULL);
+    ctx->interrupt_handler_name = (handler_name != NULL) ? Dmod_StrDup(handler_name) : NULL;
+
     return 0;
 }
 
@@ -435,7 +458,19 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    if (ctx->config.interrupt_handler != NULL)
+    if (ctx->interrupt_handler_name != NULL)
+    {
+        if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
+                dmhaman_interrupt_handler, ctx) != 0)
+        {
+            DMOD_LOG_ERROR("Failed to add named interrupt handler '%s'\n",
+                ctx->interrupt_handler_name);
+            Dmod_Free(ctx->interrupt_handler_name);
+            Dmod_Free(ctx);
+            return NULL;
+        }
+    }
+    else if (ctx->config.interrupt_handler != NULL)
     {
         if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
                 (dmgpio_port_interrupt_handler_t)ctx->config.interrupt_handler, ctx) != 0)
@@ -450,6 +485,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
     {
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
         dmgpio_port_remove_interrupt_handler(ctx->config.port, ctx);
+        Dmod_Free(ctx->interrupt_handler_name);
         Dmod_Free(ctx);
         return NULL;
     }
@@ -466,6 +502,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
         dmgpio_port_remove_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
+        Dmod_Free(context->interrupt_handler_name);
         Dmod_Free(context);
     }
 }

@@ -127,6 +127,20 @@ struct dmdrvi_context;
 typedef struct dmdrvi_context *dmdrvi_context_t;
 
 /**
+ * @brief Parameters passed to a dmhaman-registered interrupt handler.
+ *
+ * Packed into a single struct so it fits the dmhaman handler API
+ * (void *parameters) and the caller does not need to track whether
+ * the module that registered the handler is still loaded.
+ */
+typedef struct
+{
+    dmgpio_port_t      port;   /**< Port on which the interrupt occurred */
+    dmgpio_pins_mask_t pins;   /**< Bitmask of pins that caused the interrupt */
+    dmgpio_pins_mask_t state;  /**< Current pin state bitmask (bit N high = pin N is high) */
+} dmgpio_interrupt_params_t;
+
+/**
  * @brief GPIO interrupt handler function type
  *
  * Called when an interrupt occurs on a GPIO pin.

@@ -98,7 +98,23 @@ Alternate function number (0–15). Only used when `mode` is `af_pp` or `af_od`.
 
 ---
 
-## Common Configuration Examples
+### `interrupt_handler`
+
+Name of a [dmhaman](https://github.com/choco-technologies/dmhaman)-registered handler to call when an interrupt fires on this pin.  When set, the driver registers an internal wrapper that calls `dmhaman_call_handler(name, &params)` on every interrupt.  The `params` argument is a `dmgpio_interrupt_params_t` struct containing `port`, `pins`, and `state`.
+
+This allows any module to subscribe to the interrupt by calling `dmhaman_register_handler()` with the same name, without needing to use `ioctl`.
+
+| Value | Description |
+|-------|-------------|
+| *(any string)* | Handler name registered with dmhaman |
+
+**Example:** `interrupt_handler=spi.cs1`
+
+> **Note:** `interrupt_handler` and a programmatically-set handler (via `ioctl dmgpio_ioctl_cmd_set_interrupt_handler`) are mutually exclusive per device instance.  The named handler configured in the INI file takes precedence.
+
+---
+
+
 
 ### User LED (Output)
 
@@ -159,6 +175,19 @@ pull=none
 speed=low
 alternate=0
 ```
+
+### Input with dmhaman Interrupt Handler
+
+```ini
+[dmgpio]
+pin=PC13
+mode=input
+pull=up
+interrupt_trigger=falling_edge
+interrupt_handler=button_b1_handler
+```
+
+Any module that calls `dmhaman_register_handler("button_b1_handler", my_fn, my_ctx)` will receive a `dmgpio_interrupt_params_t *` whenever the pin fires.
 
 ## Pre-Configured Files
 
