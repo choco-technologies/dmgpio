@@ -74,70 +74,33 @@ jobs:
           ls -la dmf/ || echo "No dmf directory"
           ls -la dmfc/ || echo "No dmfc directory"
 
-      - name: Prepare dmgpio release package
+      - name: Add release notes and create release archives
         run: |
           set -e
-          mkdir -p release_package_port
-          BUILD_DIR=build_$BUILD_NAME
-          DMF_DIR="$BUILD_DIR/dmf"
-          DMFC_DIR="$BUILD_DIR/dmfc"
+          BUILD_DIR="build_$BUILD_NAME"
+          TAG="${{ github.event.release.tag_name }}"
+          CPU="${{ matrix.cpu_family }}"
 
-          cp "$DMF_DIR/dmgpio.dmf" release_package_port/
-          cp "$DMF_DIR/dmgpio_version.txt" release_package_port/
+          # Add release notes to dmgpio package and create release archive
+          echo "${{ github.event.release.body }}" > "$BUILD_DIR/packages/dmgpio/RELEASE_NOTES.txt"
+          cd "$BUILD_DIR/packages/dmgpio"
+          zip -r "${OLDPWD}/dmgpio-${TAG}-${CPU}.zip" .
+          cd -
 
-          cp "$DMF_DIR/dmgpio_port.dmf" release_package_port/
-          cp "$DMF_DIR/dmgpio_port_version.txt" release_package_port/
+          # Add release notes to dmgpio_port package and create release archive
+          echo "${{ github.event.release.body }}" > "$BUILD_DIR/packages/dmgpio_port/RELEASE_NOTES.txt"
+          cd "$BUILD_DIR/packages/dmgpio_port"
+          zip -r "${OLDPWD}/dmgpio_port-${TAG}-${CPU}.zip" .
+          cd -
 
-          if [ -f "$DMFC_DIR/dmgpio.dmfc" ]; then
-            cp "$DMFC_DIR/dmgpio.dmfc" release_package_port/
-          fi
+          echo "Created archives:"
+          ls -lh dmgpio-*.zip dmgpio_port-*.zip
 
-          if [ -f "$DMFC_DIR/dmgpio_port.dmfc" ]; then
-            cp "$DMFC_DIR/dmgpio_port.dmfc" release_package_port/
-          fi
-
-          if [ -f "$DMF_DIR/dmgpio.dmd" ]; then
-            cp "$DMF_DIR/dmgpio.dmd" release_package_port/
-          fi
-
-          if [ -f "$DMF_DIR/dmgpio_port.dmd" ]; then
-            cp "$DMF_DIR/dmgpio_port.dmd" release_package_port/
-          fi
-
-          # Copy header files
-          mkdir -p release_package_port/include
-          cp include/dmgpio_port.h release_package_port/include/
-          cp $BUILD_DIR/dmgpio_defs.h release_package_port/include/
-          cp $BUILD_DIR/src/port/dmgpio_port_defs.h release_package_port/include/
-
-          # Copy configuration files
-          cp -r configs release_package_port/
-
-          # Copy license
-          cp LICENSE release_package_port/
-
-          # Copy DMR resource file
-          cp dmgpio.dmr release_package_port/
-
-          # Create release notes file from GitHub release
-          echo "${{ github.event.release.body }}" > release_package_port/RELEASE_NOTES.txt
-
-          echo "Package contents:"
-          ls -la release_package_port/
-
-      - name: Create dmgpio release archive
-        run: |
-          cd release_package_port
-          zip -r ../dmgpio-${{ github.event.release.tag_name }}-${{ matrix.cpu_family }}.zip .
-          cd ..
-          echo "Created archive:"
-          ls -lh dmgpio-*.zip
-
-      - name: Upload dmgpio artifact
+      - name: Upload dmgpio and dmgpio_port artifacts
         uses: actions/upload-artifact@v4.4.3
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: dmgpio-${{ github.event.release.tag_name }}-*.zip
+          path: "dmgpio*.zip"
           retention-days: 1
 
   generate-versions-manifest:

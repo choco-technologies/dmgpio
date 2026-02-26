@@ -3,4 +3,4 @@ $include https://github.com/choco-technologies/dmgpio/releases/download/vlatest/
 
 # Module entries with version placeholder - will be expanded by $version-available
 dmgpio      https://github.com/choco-technologies/dmgpio/releases/download/v<version>/dmgpio-v<version>-<cpu_family>.zip
-dmgpio_port https://github.com/choco-technologies/dmgpio/releases/download/v<version>/dmgpio-v<version>-<cpu_family>.zip
+dmgpio_port https://github.com/choco-technologies/dmgpio/releases/download/v<version>/dmgpio_port-v<version>-<cpu_family>.zip
