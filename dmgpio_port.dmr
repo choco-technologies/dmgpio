@@ -15,8 +15,8 @@ dmd=./${module}.dmd => ${destination}/${module}.dmd [origin=${dmf_dir}/${module}
 version=./${module}_version.txt => ${destination}/${module}_version.txt [origin=${dmf_dir}/${module}_version.txt]
 
 # === Header Files ===
-# Port interface header and generated platform definitions header
-inc=./include => ${destination}/${module}/include [origin=${repo_dir}/include/dmgpio_port.h] [origin=${build_dir}/src/port/${module}_defs.h]
+# Full include directory with all headers and generated platform definitions header
+inc=./include => ${destination}/${module}/include [origin=${repo_dir}/include] [origin=${build_dir}/src/port/${module}_defs.h]
 
 # === License ===
 license=./LICENSE => ${destination}/${module}/LICENSE [origin=${repo_dir}/LICENSE]
