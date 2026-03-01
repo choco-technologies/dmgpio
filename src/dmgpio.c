@@ -288,28 +288,115 @@ static int read_port_and_pins(dmini_context_t ini, const char *section,
     return 0;
 }
 
+/**
+ * @brief Detect which INI section holds the GPIO configuration.
+ *
+ * The driver supports two config file layouts:
+ *   1. Standard: a [dmgpio] section (e.g. examples/config.ini).
+ *   2. Board / device-named: a section whose name is the device label
+ *      (e.g. [led_ld1], [button_b1] in board config files).
+ *
+ * Detection strategy:
+ *   a) If [dmgpio] contains a 'pin' or 'port' key → use "dmgpio".
+ *   b) Otherwise serialise the INI to a temporary string and scan for
+ *      the first named section (skipping [main]) that contains 'pin',
+ *      'port', or 'mode'.  Copy its name into section_buf and return it.
+ *   c) Fall back to "dmgpio" so the caller produces a meaningful error.
+ *
+ * @param ini            INI context to inspect.
+ * @param section_buf    Caller-supplied buffer that receives the name when
+ *                       a non-"dmgpio" section is chosen.
+ * @param section_buf_sz Size of section_buf in bytes.
+ * @return Pointer to the chosen section name (either the literal "dmgpio"
+ *         or section_buf).
+ */
+static const char *detect_config_section(dmini_context_t ini,
+                                          char *section_buf, size_t section_buf_sz)
+{
+    /* Fast path – standard [dmgpio] section present */
+    if (dmini_has_key(ini, "dmgpio", "pin") || dmini_has_key(ini, "dmgpio", "port"))
+        return "dmgpio";
+
+    /* Slow path – serialise the INI and scan for the first usable section */
+    int needed = dmini_generate_string(ini, NULL, 0);
+    if (needed <= 1)
+        return "dmgpio";
+
+    char *ini_str = (char *)Dmod_Malloc((size_t)needed);
+    if (ini_str == NULL)
+        return "dmgpio";
+
+    if (dmini_generate_string(ini, ini_str, (size_t)needed) <= 0)
+    {
+        Dmod_Free(ini_str);
+        return "dmgpio";
+    }
+
+    const char *result = "dmgpio";
+    char *p = ini_str;
+    while (*p != '\0')
+    {
+        if (*p == '[')
+        {
+            char *name_start = p + 1;
+            char *name_end   = name_start;
+            while (*name_end != '\0' && *name_end != ']' &&
+                   *name_end != '\n'  && *name_end != '\r')
+                name_end++;
+
+            if (*name_end == ']')
+            {
+                size_t name_len = (size_t)(name_end - name_start);
+                if (name_len > 0 && name_len < section_buf_sz)
+                {
+                    /* Copy to section_buf so we have a null-terminated name */
+                    memcpy(section_buf, name_start, name_len);
+                    section_buf[name_len] = '\0';
+
+                    if (strcmp(section_buf, "main") != 0 &&
+                        (dmini_has_key(ini, section_buf, "pin")  ||
+                         dmini_has_key(ini, section_buf, "port") ||
+                         dmini_has_key(ini, section_buf, "mode")))
+                    {
+                        result = section_buf;
+                        break;
+                    }
+                }
+            }
+        }
+        p++;
+    }
+
+    Dmod_Free(ini_str);
+    return result;
+}
+
 static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
 {
-    if (read_port_and_pins(ini, "dmgpio", &ctx->config.port, &ctx->config.pins) != 0)
+    char section_buf[64];
+    const char *section = detect_config_section(ini, section_buf, sizeof(section_buf));
+
+    if (read_port_and_pins(ini, section, &ctx->config.port, &ctx->config.pins) != 0)
         return -EINVAL;
 
     /* Mode is mandatory */
-    const char *mode_str = dmini_get_string(ini, "dmgpio", "mode", NULL);
+    const char *mode_str = dmini_get_string(ini, section, "mode", NULL);
     if (string_to_mode(mode_str, &ctx->config.mode) != 0)
     {
-        DMOD_LOG_ERROR("Invalid or missing 'mode' in [dmgpio] config (expected input/output/alternate)\n");
+        DMOD_LOG_ERROR("Invalid or missing 'mode' in [%s] config (expected input/output/alternate)\n",
+            section);
         return -EINVAL;
     }
 
-    ctx->config.pull             = string_to_pull(dmini_get_string(ini, "dmgpio", "pull", "none"));
-    ctx->config.speed            = string_to_speed(dmini_get_string(ini, "dmgpio", "speed", "default"));
-    ctx->config.output_circuit   = string_to_output_circuit(dmini_get_string(ini, "dmgpio", "output_circuit", "default"));
-    ctx->config.current          = string_to_current(dmini_get_string(ini, "dmgpio", "current", "default"));
-    ctx->config.protection       = string_to_protection(dmini_get_string(ini, "dmgpio", "protection", "dont_unlock"));
-    ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, "dmgpio", "interrupt_trigger", "off"));
+    ctx->config.pull             = string_to_pull(dmini_get_string(ini, section, "pull", "none"));
+    ctx->config.speed            = string_to_speed(dmini_get_string(ini, section, "speed", "default"));
+    ctx->config.output_circuit   = string_to_output_circuit(dmini_get_string(ini, section, "output_circuit", "default"));
+    ctx->config.current          = string_to_current(dmini_get_string(ini, section, "current", "default"));
+    ctx->config.protection       = string_to_protection(dmini_get_string(ini, section, "protection", "dont_unlock"));
+    ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, section, "interrupt_trigger", "off"));
     ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
-    const char *handler_name = dmini_get_string(ini, "dmgpio", "interrupt_handler", NULL);
+    const char *handler_name = dmini_get_string(ini, section, "interrupt_handler", NULL);
     ctx->interrupt_handler_name = (handler_name != NULL) ? Dmod_StrDup(handler_name) : NULL;
 
     return 0;
