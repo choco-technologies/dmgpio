@@ -173,7 +173,10 @@ static int string_to_port(const char *s, dmgpio_port_t *out_port)
 
 static const char *port_to_string(dmgpio_port_t port)
 {
-    static const char *names[] = { "A","B","C","D","E","F","G","H","I","J","K" };
+    /* Use a 2D char array instead of an array of pointers to avoid runtime
+     * relocation issues when the module is dynamically loaded by DMOD.
+     * Each element is a null-terminated 2-byte sequence stored inline. */
+    static const char names[11][2] = { "A","B","C","D","E","F","G","H","I","J","K" };
     if (port < (sizeof(names) / sizeof(names[0]))) return names[port];
     return "?";
 }
@@ -579,6 +582,26 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
 
     DMOD_LOG_INFO("GPIO device created for P%s[0x%04X]\n",
         port_to_string(ctx->config.port), (unsigned)ctx->config.pins);
+
+    if (dev_num != NULL)
+    {
+        /* Encode the GPIO port as the major number and the lowest configured
+         * pin index as the minor number.  This gives dmdevfs a stable, unique
+         * path of the form "dmgpio<port>/<pin>" (e.g. "dmgpio8/1" for PI1). */
+        int pin = 0;
+        for (int i = 0; i < 16; i++)
+        {
+            if (ctx->config.pins & (dmgpio_pins_mask_t)(1U << i))
+            {
+                pin = i;
+                break;
+            }
+        }
+        dev_num->flags = DMDRVI_NUM_MAJOR | DMDRVI_NUM_MINOR;
+        dev_num->major = (dmdrvi_dev_id_t)ctx->config.port;
+        dev_num->minor = (dmdrvi_dev_id_t)pin;
+    }
+
     return ctx;
 }
 
@@ -708,7 +731,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _flush,
 }
 
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _stat,
-    ( dmdrvi_context_t context, void* handle, dmdrvi_stat_t* stat ))
+    ( dmdrvi_context_t context, const char *path, dmdrvi_stat_t* stat ))
 {
     if (!is_valid_context(context) || stat == NULL)
     {
