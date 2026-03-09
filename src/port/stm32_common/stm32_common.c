@@ -557,6 +557,10 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
         uint32_t exticr_shift = ((uint32_t)pin % 4U) * 4U;
         dmgpio_port_t port    = (dmgpio_port_t)
             ((STM32_SYSCFG_EXTICR[exticr_idx] >> exticr_shift) & 0xFU);
+        /* Guard against a corrupt/uninitialized EXTICR value that exceeds the
+         * number of supported ports (A–K = 0–10).  Writing beyond the array
+         * boundary would corrupt the ISR stack and crash other modules. */
+        if ((uint32_t)port >= STM32_MAX_PORTS) continue;
         port_pending[port] |= (dmgpio_pins_mask_t)(1U << pin);
     }
 
