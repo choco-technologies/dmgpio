@@ -325,15 +325,21 @@ static const char *detect_config_section(dmini_context_t ini,
     if (needed <= 1)
         return "dmgpio";
 
-    char *ini_str = (char *)Dmod_Malloc((size_t)needed);
+    /* dmini_generate_string follows snprintf convention: the first call returns
+     * the number of characters that would be written, NOT including the null
+     * terminator.  Allocate one extra byte so the null terminator always fits
+     * and the scanning loop below is guaranteed to find it within the buffer. */
+    char *ini_str = (char *)Dmod_Malloc((size_t)needed + 1);
     if (ini_str == NULL)
         return "dmgpio";
 
-    if (dmini_generate_string(ini, ini_str, (size_t)needed) <= 0)
+    if (dmini_generate_string(ini, ini_str, (size_t)needed + 1) <= 0)
     {
         Dmod_Free(ini_str);
         return "dmgpio";
     }
+    ini_str[needed] = '\0'; /* belt-and-suspenders: ensure the buffer is always
+                             * null-terminated regardless of dmini API behaviour */
 
     const char *result = "dmgpio";
     char *p = ini_str;
