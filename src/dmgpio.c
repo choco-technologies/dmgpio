@@ -482,12 +482,20 @@ static int configure(dmdrvi_context_t ctx)
         return ret;
     }
 
-    ret = dmgpio_port_set_interrupt_trigger(c->port, c->pins, c->interrupt_trigger);
-    if (ret != 0)
+    /* Skip EXTI/NVIC register access entirely when no interrupt is configured.
+     * On a fresh boot the EXTI is already in reset state (all interrupts off),
+     * so there is nothing to clear and accessing EXTI registers is unnecessary.
+     * This also avoids hard faults in Renode when the device has no interrupt
+     * configured (e.g. the [led_ld1] section in board/stm32f746g-disco.ini). */
+    if (c->interrupt_trigger != dmgpio_int_trigger_off)
     {
-        DMOD_LOG_ERROR("Failed to set interrupt trigger for GPIO port %s pins 0x%04X\n",
-            port_to_string(c->port), (unsigned)c->pins);
-        return ret;
+        ret = dmgpio_port_set_interrupt_trigger(c->port, c->pins, c->interrupt_trigger);
+        if (ret != 0)
+        {
+            DMOD_LOG_ERROR("Failed to set interrupt trigger for GPIO port %s pins 0x%04X\n",
+                port_to_string(c->port), (unsigned)c->pins);
+            return ret;
+        }
     }
 
     ret = dmgpio_port_finish_configuration(c->port, c->pins);
