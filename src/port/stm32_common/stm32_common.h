@@ -43,6 +43,10 @@ typedef struct
 
 /** RCC AHB1 peripheral clock enable register */
 #define STM32_RCC_AHB1ENR       (*(volatile uint32_t *)0x40023830UL)
+/** RCC APB2 peripheral clock enable register */
+#define STM32_RCC_APB2ENR       (*(volatile uint32_t *)0x40023844UL)
+/** Bit in RCC_APB2ENR that enables the SYSCFG peripheral clock */
+#define STM32_RCC_APB2ENR_SYSCFGEN  (1U << 14U)
 /** SYSCFG external interrupt configuration registers (EXTICR1-4) */
 #define STM32_SYSCFG_EXTICR     ((volatile uint32_t *)0x40013808UL)
 /** EXTI controller base */

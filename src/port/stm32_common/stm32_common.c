@@ -168,6 +168,10 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_power,
         STM32_RCC_AHB1ENR |= (1U << (uint32_t)port);
     else
         STM32_RCC_AHB1ENR &= ~(1U << (uint32_t)port);
+    /* Read-back barrier: ensure the clock-enable write has completed before
+     * any subsequent GPIO register access (required on Cortex-M7 and some
+     * Renode models that enforce peripheral clock gating). */
+    (void)STM32_RCC_AHB1ENR;
     return 0;
 }
 
@@ -390,6 +394,13 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
         }
         else
         {
+            /* Enable the SYSCFG peripheral clock before accessing its registers.
+             * This is required on real STM32 hardware (APB2 clock gate) and must
+             * also be done before any Renode SYSCFG model access.  A read-back
+             * barrier is added so the write completes before EXTICR is touched. */
+            STM32_RCC_APB2ENR |= STM32_RCC_APB2ENR_SYSCFGEN;
+            (void)STM32_RCC_APB2ENR;
+
             /* Map GPIO port to EXTI line via SYSCFG_EXTICR. */
             uint32_t exticr_idx   = (uint32_t)pin / 4U;
             uint32_t exticr_shift = ((uint32_t)pin % 4U) * 4U;
