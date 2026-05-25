@@ -649,50 +649,74 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
 }
 
 /**
- * @brief Read: returns hex bitmask of pins currently in high state, e.g. "0x000A"
+ * @brief Read: returns the state ("0" or "1") of the GPIO pin selected by offset.
+ *
+ * @param offset  Pin number (0–15) to read.  The pin must be part of the
+ *                configured pins mask.  Returns 0 bytes for out-of-range or
+ *                unconfigured pins.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
     ( dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset ))
 {
-    (void)offset; /* GPIO has no addressable memory; offset is ignored */
-
-    if (!is_valid_context(context))
+    if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
 
-    dmgpio_pins_mask_t high_pins = dmgpio_port_get_high_state_pins(
-        context->config.port, context->config.pins);
+    if (offset > 15)
+    {
+        DMOD_LOG_ERROR("Invalid pin offset %u in dmgpio_read (must be 0-15)\n", (unsigned)offset);
+        return 0;
+    }
 
-    int written = Dmod_SnPrintf(buffer, size, "0x%04X", (unsigned)high_pins);
+    dmgpio_pins_mask_t pin_mask = (dmgpio_pins_mask_t)(1U << offset);
+    if ((context->config.pins & pin_mask) == 0)
+    {
+        DMOD_LOG_ERROR("Pin %u is not in the configured pins mask 0x%04X\n",
+            (unsigned)offset, (unsigned)context->config.pins);
+        return 0;
+    }
+
+    dmgpio_pins_mask_t high_pins = dmgpio_port_get_high_state_pins(
+        context->config.port, pin_mask);
+    int written = Dmod_SnPrintf(buffer, size, "%c",
+        (high_pins & pin_mask) ? '1' : '0');
     return (written > 0) ? (size_t)written : 0;
 }
 
 /**
- * @brief Write: accepts a decimal or hex (0x-prefixed) pin-state bitmask string,
- *        e.g. "0x000A" or "10", and sets the configured pins accordingly.
+ * @brief Write: sets the state of the GPIO pin selected by offset.
+ *
+ * @param offset  Pin number (0–15) to write.  The pin must be part of the
+ *                configured pins mask.  Accepts "0" (low) or "1"
+ *                (high).  Any other value is rejected with an error.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
     ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset ))
 {
-    (void)offset; /* GPIO has no addressable memory; offset is ignored */
-
     if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
 
-    /* Ensure null-terminated copy for parsing */
-    char tmp[8];
-    size_t copy_len = (size < sizeof(tmp) - 1) ? size : sizeof(tmp) - 1;
-    memcpy(tmp, buffer, copy_len);
-    tmp[copy_len] = '\0';
-
-    unsigned long val;
-    if (parse_uint(tmp, &val) != 0)
+    if (offset > 15)
     {
-        DMOD_LOG_ERROR("Invalid pin state value for _write: '%s'\n", tmp);
+        DMOD_LOG_ERROR("Invalid pin offset %u in dmgpio_write (must be 0-15)\n", (unsigned)offset);
         return 0;
     }
 
-    dmgpio_port_write_data(context->config.port, context->config.pins,
-        (dmgpio_pins_mask_t)val);
+    dmgpio_pins_mask_t pin_mask = (dmgpio_pins_mask_t)(1U << offset);
+    if ((context->config.pins & pin_mask) == 0)
+    {
+        DMOD_LOG_ERROR("Pin %u is not in the configured pins mask 0x%04X\n",
+            (unsigned)offset, (unsigned)context->config.pins);
+        return 0;
+    }
+
+    const char *str = (const char *)buffer;
+    if (str[0] != '0' && str[0] != '1')
+    {
+        DMOD_LOG_ERROR("Invalid pin state value '%c' for dmgpio_write (expected '0' or '1')\n", str[0]);
+        return 0;
+    }
+    dmgpio_pins_mask_t data = (str[0] == '1') ? pin_mask : 0;
+    dmgpio_port_write_data(context->config.port, pin_mask, data);
     return size;
 }
 
@@ -756,7 +780,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _stat,
         DMOD_LOG_ERROR("Invalid parameters in dmgpio_dmdrvi_stat\n");
         return -EINVAL;
     }
-    stat->size = 1;
+    stat->size = 16;  /* 16 addressable pin positions (offset 0-15) */
     stat->mode = 0666;
     return 0;
 }

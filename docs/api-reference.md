@@ -134,41 +134,34 @@ void dmgpio_dmdrvi_close(dmdrvi_context_t context, void* handle);
 
 ### `dmgpio_dmdrvi_read`
 
-Read the current high-state pin bitmask as a hex string.
+Read the current state of a single GPIO pin.
 
 ```c
 size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset);
 ```
 
 **Parameters:**
-- `offset` – Byte offset (ignored for GPIO devices; GPIO has no addressable memory)
+- `offset` – Pin number (0–15) to read.  The pin must be part of the configured `pins` mask; reading an unconfigured or out-of-range pin returns 0 bytes.
 
-**Output format:**
-```
-0x<XXXX>
-```
+**Output format:**  
+A single ASCII character: `"0"` (pin is low) or `"1"` (pin is high).
 
-For example `"0x000A"` means pins 1 and 3 are currently high.
-
-**Returns:** Number of bytes written to `buffer`.
+**Returns:** Number of bytes written to `buffer` (1 on success, 0 on error).
 
 ---
 
 ### `dmgpio_dmdrvi_write`
 
-Write the desired high-state pin bitmask to the device.
+Set the state of a single GPIO pin.
 
 ```c
 size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset);
 ```
 
 **Parameters:**
-- `offset` – Byte offset (ignored for GPIO devices; GPIO has no addressable memory)
+- `offset` – Pin number (0–15) to write.  The pin must be part of the configured `pins` mask; writing an unconfigured or out-of-range pin returns 0 bytes.
 
-Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Each bit in the
-value corresponds to a pin within the configured `pins` mask: a `1` sets
-the pin high, a `0` sets it low.  The output of `dmgpio_dmdrvi_read` can
-be passed directly as input to `dmgpio_dmdrvi_write`.
+Accepts a single ASCII character in `buffer`: `"0"` sets the pin low; `"1"` sets the pin high. Any other value is rejected and returns 0 bytes.
 
 ---
 
