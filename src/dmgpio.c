@@ -11,6 +11,19 @@
 #define DMGPIO_CONTEXT_MAGIC    0x44475049
 
 /**
+ * @brief Length of the pin-state content string "0x%04X" (6 chars, not counting NUL).
+ */
+#define DMGPIO_STATE_STR_LEN    6
+#define DMGPIO_STATE_BUF_SIZE   (DMGPIO_STATE_STR_LEN + 1)  /* "0x%04X\0" */
+
+/**
+ * @brief Size of the write input buffer.
+ *        Must accommodate the longest valid input plus NUL and optional surrounding
+ *        whitespace (e.g. "  0xFFFF\r\n" = 10 chars).  16 bytes provides ample margin.
+ */
+#define DMGPIO_WRITE_BUF_SIZE   16
+
+/**
  * @brief DMDRVI context structure
  */
 struct dmdrvi_context
@@ -649,74 +662,95 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
 }
 
 /**
- * @brief Read: returns the state ("0" or "1") of the GPIO pin selected by offset.
+ * @brief Read: returns a slice of the current pin-state hex string ("0x%04X").
  *
- * @param offset  Pin number (0–15) to read.  The pin must be part of the
- *                configured pins mask.  Returns 0 bytes for out-of-range or
- *                unconfigured pins.
+ * The device is modelled as a 6-byte virtual file whose content is always
+ * the current high-state bitmask formatted as "0x%04X" (e.g. "0x000A").
+ * @p offset is a byte offset into that content, enabling standard
+ * pread()-style access.  A @p offset at or beyond the content length
+ * returns 0 bytes (EOF), which is how tools like `cat` detect end-of-file.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
     ( dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset ))
 {
-    if (!is_valid_context(context) || buffer == NULL || size == 0)
+    if (!is_valid_context(context) || buffer == NULL)
         return 0;
 
-    if (offset > 15)
-    {
-        DMOD_LOG_ERROR("Invalid pin offset %u in dmgpio_read (must be 0-15)\n", (unsigned)offset);
+    /* size == 0 is a no-op; return 0 without error */
+    if (size == 0)
         return 0;
-    }
 
-    dmgpio_pins_mask_t pin_mask = (dmgpio_pins_mask_t)(1U << offset);
-    if ((context->config.pins & pin_mask) == 0)
-    {
-        DMOD_LOG_ERROR("Pin %u is not in the configured pins mask 0x%04X\n",
-            (unsigned)offset, (unsigned)context->config.pins);
-        return 0;
-    }
-
+    /* Build the current content string */
+    char content[DMGPIO_STATE_BUF_SIZE]; /* "0x%04X\0" */
     dmgpio_pins_mask_t high_pins = dmgpio_port_get_high_state_pins(
-        context->config.port, pin_mask);
-    int written = Dmod_SnPrintf(buffer, size, "%c",
-        (high_pins & pin_mask) ? '1' : '0');
-    return (written > 0) ? (size_t)written : 0;
+        context->config.port, context->config.pins);
+    int content_len = Dmod_SnPrintf(content, sizeof(content), "0x%04X",
+        (unsigned)high_pins);
+    if (content_len <= 0)
+        return 0;
+
+    /* Return 0 (EOF) when the offset is at or beyond the end of the content */
+    if (offset >= (uint32_t)content_len)
+        return 0;
+
+    /* Both values are non-negative and offset < content_len, so the subtraction is safe */
+    size_t available = (size_t)((uint32_t)content_len - offset);
+    size_t to_copy   = (available < size) ? available : size;
+    memcpy(buffer, content + offset, to_copy);
+    return to_copy;
 }
 
 /**
- * @brief Write: sets the state of the GPIO pin selected by offset.
+ * @brief Write: accepts a pin-state bitmask string (decimal or "0x"-prefixed hex)
+ *        and applies it to the configured pins.  Trailing whitespace and newlines
+ *        (e.g. appended by the shell's `echo`) are silently stripped.
  *
- * @param offset  Pin number (0–15) to write.  The pin must be part of the
- *                configured pins mask.  Accepts "0" (low) or "1"
- *                (high).  Any other value is rejected with an error.
+ * @p offset is not meaningful for GPIO (the state is a single atomic value) and
+ * is ignored.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
     ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset ))
 {
+    (void)offset; /* GPIO state is a single atomic value; byte offset is not applicable */
+
     if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
 
-    if (offset > 15)
+    /* Copy to a local buffer and null-terminate */
+    char tmp[DMGPIO_WRITE_BUF_SIZE];
+    size_t copy_len = (size < sizeof(tmp) - 1) ? size : sizeof(tmp) - 1;
+    memcpy(tmp, buffer, copy_len);
+    tmp[copy_len] = '\0';
+
+    /* Strip trailing whitespace / newlines (e.g. from `echo "0x0001"`) */
+    while (copy_len > 0 &&
+           (tmp[copy_len - 1] == '\n' || tmp[copy_len - 1] == '\r' ||
+            tmp[copy_len - 1] == ' '  || tmp[copy_len - 1] == '\t'))
     {
-        DMOD_LOG_ERROR("Invalid pin offset %u in dmgpio_write (must be 0-15)\n", (unsigned)offset);
+        copy_len--;
+        tmp[copy_len] = '\0';
+    }
+
+    /* Skip leading whitespace */
+    const char *start = tmp;
+    while (*start == ' ' || *start == '\t')
+        start++;
+
+    if (*start == '\0')
+    {
+        DMOD_LOG_ERROR("Empty pin state value for _write\n");
         return 0;
     }
 
-    dmgpio_pins_mask_t pin_mask = (dmgpio_pins_mask_t)(1U << offset);
-    if ((context->config.pins & pin_mask) == 0)
+    unsigned long val;
+    if (parse_uint(start, &val) != 0)
     {
-        DMOD_LOG_ERROR("Pin %u is not in the configured pins mask 0x%04X\n",
-            (unsigned)offset, (unsigned)context->config.pins);
+        DMOD_LOG_ERROR("Invalid pin state value for _write: '%s'\n", tmp);
         return 0;
     }
 
-    const char *str = (const char *)buffer;
-    if (str[0] != '0' && str[0] != '1')
-    {
-        DMOD_LOG_ERROR("Invalid pin state value '%c' for dmgpio_write (expected '0' or '1')\n", str[0]);
-        return 0;
-    }
-    dmgpio_pins_mask_t data = (str[0] == '1') ? pin_mask : 0;
-    dmgpio_port_write_data(context->config.port, pin_mask, data);
+    dmgpio_port_write_data(context->config.port, context->config.pins,
+        (dmgpio_pins_mask_t)val);
     return size;
 }
 
@@ -780,7 +814,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _stat,
         DMOD_LOG_ERROR("Invalid parameters in dmgpio_dmdrvi_stat\n");
         return -EINVAL;
     }
-    stat->size = 16;  /* 16 addressable pin positions (offset 0-15) */
+    stat->size = DMGPIO_STATE_STR_LEN;  /* content is always "0x%04X": 6 bytes */
     stat->mode = 0666;
     return 0;
 }

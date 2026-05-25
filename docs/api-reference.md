@@ -134,34 +134,36 @@ void dmgpio_dmdrvi_close(dmdrvi_context_t context, void* handle);
 
 ### `dmgpio_dmdrvi_read`
 
-Read the current state of a single GPIO pin.
+Read the current high-state pin bitmask as a hex string, with `pread`-style byte offset support.
 
 ```c
 size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset);
 ```
 
-**Parameters:**
-- `offset` – Pin number (0–15) to read.  The pin must be part of the configured `pins` mask; reading an unconfigured or out-of-range pin returns 0 bytes.
+The device is modelled as a 6-byte virtual file whose content is always the current high-state bitmask formatted as `"0x%04X"` (e.g. `"0x000A"`).  `offset` is a byte offset into that content, enabling standard `pread()`-style access.  An `offset` at or beyond 6 returns 0 bytes (EOF).
 
-**Output format:**  
-A single ASCII character: `"0"` (pin is low) or `"1"` (pin is high).
+**Example:**
+```
+// offset=0, size=16 → "0x000A"  (6 bytes, pin 1 and 3 are high)
+// offset=6, size=16 → ""        (0 bytes, EOF)
+// offset=2, size=2  → "00"      (mid-string slice)
+```
 
-**Returns:** Number of bytes written to `buffer` (1 on success, 0 on error).
+**Returns:** Number of bytes copied into `buffer`, or 0 at EOF.
 
 ---
 
 ### `dmgpio_dmdrvi_write`
 
-Set the state of a single GPIO pin.
+Write the desired high-state pin bitmask to the device.
 
 ```c
 size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset);
 ```
 
-**Parameters:**
-- `offset` – Pin number (0–15) to write.  The pin must be part of the configured `pins` mask; writing an unconfigured or out-of-range pin returns 0 bytes.
+Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Trailing whitespace and newlines (e.g. appended by the shell's `echo`) are automatically stripped.  Each bit in the value corresponds to a pin within the configured `pins` mask: a `1` sets the pin high, a `0` sets it low.
 
-Accepts a single ASCII character in `buffer`: `"0"` sets the pin low; `"1"` sets the pin high. Any other value is rejected and returns 0 bytes.
+`offset` is not meaningful for GPIO (the state is a single atomic value) and is ignored.
 
 ---
 
