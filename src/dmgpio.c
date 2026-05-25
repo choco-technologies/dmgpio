@@ -627,6 +627,24 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         dev_num->flags = DMDRVI_NUM_MAJOR | DMDRVI_NUM_MINOR;
         dev_num->major = (dmdrvi_dev_id_t)ctx->config.port;
         dev_num->minor = (dmdrvi_dev_id_t)pin;
+
+        /* If the config uses a named section (e.g. [led_ld1] or [button_b1])
+         * populate alt_name so the device filesystem registers the device
+         * under that human-friendly name instead of the numeric path.
+         *
+         * detect_config_section always returns a non-NULL pointer ("dmgpio"
+         * as a fallback or the section_buf pointer on success). */
+        char section_buf[DMDRVI_ALT_NAME_MAX_LEN + 1];
+        const char *section = detect_config_section(config, section_buf, sizeof(section_buf));
+        if (strcmp(section, "dmgpio") != 0)
+        {
+            size_t name_len = strlen(section);
+            if (name_len <= DMDRVI_ALT_NAME_MAX_LEN)
+            {
+                dev_num->flags |= DMDRVI_NUM_ALT_NAME;
+                memcpy(dev_num->alt_name, section, name_len + 1);
+            }
+        }
     }
 
     return ctx;
