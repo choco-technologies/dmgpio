@@ -137,8 +137,11 @@ void dmgpio_dmdrvi_close(dmdrvi_context_t context, void* handle);
 Read the current high-state pin bitmask as a hex string.
 
 ```c
-size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size);
+size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset);
 ```
+
+**Parameters:**
+- `offset` – Byte offset (ignored for GPIO devices; GPIO has no addressable memory)
 
 **Output format:**
 ```
@@ -156,8 +159,11 @@ For example `"0x000A"` means pins 1 and 3 are currently high.
 Write the desired high-state pin bitmask to the device.
 
 ```c
-size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size);
+size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset);
 ```
+
+**Parameters:**
+- `offset` – Byte offset (ignored for GPIO devices; GPIO has no addressable memory)
 
 Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Each bit in the
 value corresponds to a pin within the configured `pins` mask: a `1` sets

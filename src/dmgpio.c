@@ -652,8 +652,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
  * @brief Read: returns hex bitmask of pins currently in high state, e.g. "0x000A"
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
-    ( dmdrvi_context_t context, void* handle, void* buffer, size_t size ))
+    ( dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset ))
 {
+    (void)offset; /* GPIO has no addressable memory; offset is ignored */
+
     if (!is_valid_context(context))
         return 0;
 
@@ -669,8 +671,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
  *        e.g. "0x000A" or "10", and sets the configured pins accordingly.
  */
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
-    ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size ))
+    ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset ))
 {
+    (void)offset; /* GPIO has no addressable memory; offset is ignored */
+
     if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
 
