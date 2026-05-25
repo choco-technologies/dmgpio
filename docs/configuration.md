@@ -6,7 +6,7 @@ DMGPIO reads its pin configuration from an INI file using the DMINI module. The 
 
 ## Configuration File Format
 
-The configuration uses a `[dmgpio]` section:
+The configuration uses a `[dmgpio]` section (standard format) or a custom named section (alternative names format, see below):
 
 ```ini
 [dmgpio]
@@ -188,6 +188,34 @@ interrupt_handler=button_b1_handler
 ```
 
 Any module that calls `dmhaman_register_handler("button_b1_handler", my_fn, my_ctx)` will receive a `dmgpio_interrupt_params_t *` whenever the pin fires.
+
+## Alternative Names (Named Sections)
+
+Board configuration files can contain multiple named sections — one per device — instead of the default `[dmgpio]` section. When a named section is used (e.g. `[led_ld1]`), DMGPIO automatically sets the `DMDRVI_NUM_ALT_NAME` flag in `dev_num` and stores the section name in `dev_num->alt_name`. The device filesystem will then register the device under that name.
+
+### Example — board config with multiple named pins
+
+```ini
+; DMGPIO pin configurations for STM32F746G-DISCOVERY board
+[led_ld1]
+; Green User LED LD1 - PI1 (output push-pull)
+pin=PI1
+mode=output
+pull=none
+speed=minimum
+output_circuit=push_pull
+
+[button_b1]
+; User Button B1 - PI11 (input, active high)
+pin=PI11
+mode=input
+pull=none
+interrupt_trigger=rising_edge
+```
+
+Each section is loaded independently — one INI file (or one section within a board config) per `dmgpio_dmdrvi_create()` call.  When the loaded section is named (e.g. `[led_ld1]`), `dev_num->alt_name` is set to `"led_ld1"` and the device filesystem registers the device under that name.  When the loaded section is `[button_b1]`, `dev_num->alt_name` is set to `"button_b1"`, and so on.
+
+> **Note:** The section name must be 32 characters or fewer (`DMDRVI_ALT_NAME_MAX_LEN`). If it exceeds this limit the `alt_name` feature is not used and the device falls back to numeric major/minor registration only.
 
 ## Pre-Configured Files
 
