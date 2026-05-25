@@ -134,20 +134,22 @@ void dmgpio_dmdrvi_close(dmdrvi_context_t context, void* handle);
 
 ### `dmgpio_dmdrvi_read`
 
-Read the current high-state pin bitmask as a hex string.
+Read the current high-state pin bitmask as a hex string, with `pread`-style byte offset support.
 
 ```c
-size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size);
+size_t dmgpio_dmdrvi_read(dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset);
 ```
 
-**Output format:**
+The device is modelled as a 6-byte virtual file whose content is always the current high-state bitmask formatted as `"0x%04X"` (e.g. `"0x000A"`).  `offset` is a byte offset into that content, enabling standard `pread()`-style access.  An `offset` at or beyond 6 returns 0 bytes (EOF).
+
+**Example:**
 ```
-0x<XXXX>
+// offset=0, size=16 → "0x000A"  (6 bytes, pin 1 and 3 are high)
+// offset=6, size=16 → ""        (0 bytes, EOF)
+// offset=2, size=2  → "00"      (mid-string slice)
 ```
 
-For example `"0x000A"` means pins 1 and 3 are currently high.
-
-**Returns:** Number of bytes written to `buffer`.
+**Returns:** Number of bytes copied into `buffer`, or 0 at EOF.
 
 ---
 
@@ -156,13 +158,12 @@ For example `"0x000A"` means pins 1 and 3 are currently high.
 Write the desired high-state pin bitmask to the device.
 
 ```c
-size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size);
+size_t dmgpio_dmdrvi_write(dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset);
 ```
 
-Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Each bit in the
-value corresponds to a pin within the configured `pins` mask: a `1` sets
-the pin high, a `0` sets it low.  The output of `dmgpio_dmdrvi_read` can
-be passed directly as input to `dmgpio_dmdrvi_write`.
+Accepts a decimal (`"10"`) or hex (`"0x000A"`) string.  Trailing whitespace and newlines (e.g. appended by the shell's `echo`) are automatically stripped.  Each bit in the value corresponds to a pin within the configured `pins` mask: a `1` sets the pin high, a `0` sets it low.
+
+`offset` is not meaningful for GPIO (the state is a single atomic value) and is ignored.
 
 ---
 
