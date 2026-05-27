@@ -554,6 +554,12 @@ dmod_dmgpio_port_api_declaration(1.0, void, _toggle_pins_state,
 
 void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
 {
+    /* Keep SYSCFG clock enabled before reading EXTICR mapping registers.
+     * On STM32F7, reading EXTICR with SYSCFG clock gated can trigger a bus
+     * fault from interrupt context. */
+    STM32_RCC_APB2ENR |= STM32_RCC_APB2ENR_SYSCFGEN;
+    (void)STM32_RCC_APB2ENR;
+
     volatile stm32_exti_t *exti = STM32_EXTI;
     uint32_t pending = exti->PR & exti_lines;
 
@@ -591,4 +597,3 @@ void stm32_gpio_exti_irq_handler(uint32_t exti_lines)
 
     exti->PR = pending; /* Writing 1 clears the pending bit. */
 }
-
