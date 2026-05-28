@@ -17,6 +17,7 @@ typedef struct
     dmgpio_mode_t               mode;               /**< Pin direction mode */
     dmgpio_pull_t               pull;               /**< Pull-up/pull-down selection */
     dmgpio_output_circuit_t     output_circuit;     /**< Output circuit type */
+    uint8_t                     alternate_function; /**< Alternate function number (0-15) */
     dmgpio_int_trigger_t        interrupt_trigger;  /**< Interrupt trigger source */
     dmgpio_interrupt_handler_t  interrupt_handler;  /**< Interrupt handler (NULL = not used) */
 } dmgpio_config_t;

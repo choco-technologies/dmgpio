@@ -418,6 +418,23 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
     ctx->config.interrupt_trigger = string_to_interrupt_trigger(dmini_get_string(ini, section, "interrupt_trigger", "off"));
     ctx->config.interrupt_handler = NULL; /* set programmatically or via ioctl */
 
+    /* Alternate function number (0-15), used when mode=alternate */
+    const char *af_str = dmini_get_string(ini, section, "alternate_function", NULL);
+    if (af_str != NULL)
+    {
+        unsigned long af_val;
+        if (parse_uint(af_str, &af_val) != 0 || af_val > 15)
+        {
+            DMOD_LOG_ERROR("Invalid 'alternate_function' in [%s] config (must be 0-15)\n", section);
+            return -EINVAL;
+        }
+        ctx->config.alternate_function = (uint8_t)af_val;
+    }
+    else
+    {
+        ctx->config.alternate_function = 0;
+    }
+
     const char *handler_name = dmini_get_string(ini, section, "interrupt_handler", NULL);
     ctx->interrupt_handler_name = (handler_name != NULL) ? Dmod_StrDup(handler_name) : NULL;
 
@@ -485,6 +502,17 @@ static int configure(dmdrvi_context_t ctx)
         DMOD_LOG_ERROR("Failed to set output circuit for GPIO port %s pins 0x%04X\n",
             port_to_string(c->port), (unsigned)c->pins);
         return ret;
+    }
+
+    if (c->mode == dmgpio_mode_alternate)
+    {
+        ret = dmgpio_port_set_alternate_function(c->port, c->pins, c->alternate_function);
+        if (ret != 0)
+        {
+            DMOD_LOG_ERROR("Failed to set alternate function for GPIO port %s pins 0x%04X\n",
+                port_to_string(c->port), (unsigned)c->pins);
+            return ret;
+        }
     }
 
     ret = dmgpio_port_set_current(c->port, c->pins, c->current);
