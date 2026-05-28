@@ -98,6 +98,14 @@ Alternate function number (0–15). Only used when `mode` is `af_pp` or `af_od`.
 
 ---
 
+### `alternate_function`
+
+Alternate function number (0–15). Used when `mode` is `alternate`. This is the preferred parameter name for the named-section configuration style. Refer to the MCU datasheet for the correct alternate function number.
+
+**Example:** `alternate_function=8` (UART on STM32F7)
+
+---
+
 ### `interrupt_handler`
 
 Name of a [dmhaman](https://github.com/choco-technologies/dmhaman)-registered handler to call when an interrupt fires on this pin.  When set, the driver registers an internal wrapper that calls `dmhaman_call_handler(name, &params)` on every interrupt.  The `params` argument is a `dmgpio_interrupt_params_t` struct containing `port`, `pins`, and `state`.
@@ -211,6 +219,15 @@ pin=PI11
 mode=input
 pull=none
 interrupt_trigger=rising_edge
+
+[arduino_uart_tx]
+; Arduino UART TX - PC6 (alternate function 8, push-pull)
+pin=PC6
+mode=alternate
+alternate_function=8
+speed=maximum
+output_circuit=push_pull
+pull=up
 ```
 
 Each section is loaded independently — one INI file (or one section within a board config) per `dmgpio_dmdrvi_create()` call.  When the loaded section is named (e.g. `[led_ld1]`), `dev_num->alt_name` is set to `"led_ld1"` and the device filesystem registers the device under that name.  When the loaded section is `[button_b1]`, `dev_num->alt_name` is set to `"button_b1"`, and so on.

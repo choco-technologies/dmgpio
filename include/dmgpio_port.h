@@ -40,6 +40,8 @@ dmod_dmgpio_port_api(1.0, int,  _set_pull,              ( dmgpio_port_t port, dm
 dmod_dmgpio_port_api(1.0, int,  _read_pull,             ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pull_t *out_pull ));
 dmod_dmgpio_port_api(1.0, int,  _set_output_circuit,    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_output_circuit_t oc ));
 dmod_dmgpio_port_api(1.0, int,  _read_output_circuit,   ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_output_circuit_t *out_oc ));
+dmod_dmgpio_port_api(1.0, int,  _set_alternate_function, ( dmgpio_port_t port, dmgpio_pins_mask_t pins, uint8_t af ));
+dmod_dmgpio_port_api(1.0, int,  _read_alternate_function,( dmgpio_port_t port, dmgpio_pins_mask_t pins, uint8_t *out_af ));
 dmod_dmgpio_port_api(1.0, int,  _set_interrupt_trigger, ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t trigger ));
 dmod_dmgpio_port_api(1.0, int,  _read_interrupt_trigger,( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t *out_trigger ));
 

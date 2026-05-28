@@ -369,6 +369,40 @@ dmod_dmgpio_port_api_declaration(1.0, int, _read_output_circuit,
     return -1;
 }
 
+dmod_dmgpio_port_api_declaration(1.0, int, _set_alternate_function,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, uint8_t af ))
+{
+    if (!is_valid_port(port) || af > 15U) return -1;
+    volatile stm32_gpio_t *gpio = STM32_GPIO(port);
+    for (int pin = 0; pin < 16; pin++)
+    {
+        if (!(pins & (dmgpio_pins_mask_t)(1U << pin))) continue;
+        /* AFR[0] covers pins 0-7, AFR[1] covers pins 8-15; 4 bits per pin */
+        uint32_t reg_idx = (uint32_t)pin / 8U;
+        uint32_t shift   = ((uint32_t)pin % 8U) * 4U;
+        gpio->AFR[reg_idx] = (gpio->AFR[reg_idx] & ~(0xFU << shift)) | ((uint32_t)af << shift);
+    }
+    return 0;
+}
+
+dmod_dmgpio_port_api_declaration(1.0, int, _read_alternate_function,
+    ( dmgpio_port_t port, dmgpio_pins_mask_t pins, uint8_t *out_af ))
+{
+    if (!is_valid_port(port) || out_af == NULL || pins == 0U) return -1;
+    /* Read from the lowest set pin. */
+    for (int pin = 0; pin < 16; pin++)
+    {
+        if (pins & (dmgpio_pins_mask_t)(1U << pin))
+        {
+            uint32_t reg_idx = (uint32_t)pin / 8U;
+            uint32_t shift   = ((uint32_t)pin % 8U) * 4U;
+            *out_af = (uint8_t)((STM32_GPIO(port)->AFR[reg_idx] >> shift) & 0xFU);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t trigger ))
 {

@@ -110,6 +110,8 @@ alternate=0     # Alternate function number (0-15, for AF modes)
 
 - **alternate**: Alternate function number (0–15), used only when `mode` is `af_pp` or `af_od`
 
+- **alternate_function**: Alternate function number (0–15), used when `mode` is `alternate`
+
 ## Customization
 
 You can modify these configuration files for your specific hardware:
