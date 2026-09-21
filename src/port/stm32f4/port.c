@@ -1,6 +1,5 @@
 #define DMOD_ENABLE_REGISTRATION    ON
 #include "dmod.h"
-#include "dmosi.h"
 #include "dmgpio_port.h"
 #include "../stm32_common/stm32_common.h"
 

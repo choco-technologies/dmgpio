@@ -63,5 +63,4 @@ dmod_dmgpio_port_api(1.0, dmgpio_pins_mask_t, _get_low_state_pins,  ( dmgpio_por
 dmod_dmgpio_port_api(1.0, void, _set_pins_state,      ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_pins_state_t state ));
 dmod_dmgpio_port_api(1.0, void, _toggle_pins_state,   ( dmgpio_port_t port, dmgpio_pins_mask_t pins ));
 
-dmod_dmgpio_port_api(1.0, int, _claim_pins, (dmgpio_port_t port, dmgpio_pins_mask_t pins));
 #endif // DMGPIO_PORT_H

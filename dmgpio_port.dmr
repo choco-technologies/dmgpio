@@ -20,10 +20,3 @@ inc=./include => ${destination}/${module}/include [origin=${repo_dir}/include] [
 
 # === License ===
 license=./LICENSE => ${destination}/${module}/LICENSE [origin=${repo_dir}/LICENSE]
-
-# Adding itself - without this entry the .dmr never ends up in the
-# release zip, so dmf-get (which reads the .dmr from the downloaded
-# package to resolve every other resource, including inc) fails with
-# "Resource 'inc' not found in package" even though include/ is right
-# there in the zip.
-dmr=./${module}.dmr => ${destination}/${module}/${module}.dmr [origin=${repo_dir}/${module}.dmr]

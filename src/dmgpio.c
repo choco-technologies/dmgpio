@@ -603,12 +603,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         return NULL;
     }
 
-    if (dmgpio_port_claim_pins(ctx->config.port, ctx->config.pins) != 0)
-    {
-        Dmod_Free(ctx->interrupt_handler_name);
-        Dmod_Free(ctx);
-        return NULL;
-    }
     if (ctx->interrupt_handler_name != NULL)
     {
         if (dmgpio_port_add_interrupt_handler(ctx->config.port, ctx->config.pins,
@@ -617,7 +611,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
             DMOD_LOG_ERROR("Failed to add named interrupt handler '%s'\n",
                 ctx->interrupt_handler_name);
             Dmod_Free(ctx->interrupt_handler_name);
-            dmgpio_port_set_pins_unused(ctx->config.port, ctx->config.pins);
             Dmod_Free(ctx);
             return NULL;
         }
@@ -628,7 +621,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
                 (dmgpio_port_interrupt_handler_t)ctx->config.interrupt_handler, ctx) != 0)
         {
             DMOD_LOG_ERROR("Failed to add initial interrupt handler\n");
-            dmgpio_port_set_pins_unused(ctx->config.port, ctx->config.pins);
             Dmod_Free(ctx);
             return NULL;
         }
@@ -639,7 +631,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
         DMOD_LOG_ERROR("Failed to configure GPIO\n");
         dmgpio_port_remove_interrupt_handler(ctx->config.port, ctx);
         Dmod_Free(ctx->interrupt_handler_name);
-        dmgpio_port_set_pins_unused(ctx->config.port, ctx->config.pins);
         Dmod_Free(ctx);
         return NULL;
     }
@@ -691,7 +682,6 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
 {
     if (is_valid_context(context))
     {
-        dmgpio_port_set_interrupt_trigger(context->config.port, context->config.pins, dmgpio_int_trigger_off);
         dmgpio_port_remove_interrupt_handler(context->config.port, context);
         dmgpio_port_set_pins_unused(context->config.port, context->config.pins);
         context->magic = 0;
@@ -701,7 +691,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
 }
 
 dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void*, _open,
-    ( dmdrvi_context_t context, int flags, const dmdrvi_dev_num_t *dev_num ))
+    ( dmdrvi_context_t context, int flags ))
 {
     if (!is_valid_context(context))
     {
