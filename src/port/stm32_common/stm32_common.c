@@ -1,5 +1,3 @@
-#include "dmod.h"
-#include "dmosi.h"
 #include "stm32_common.h"
 #include <stddef.h>
 
@@ -76,7 +74,6 @@ static uint32_t read_2bit_field(volatile const uint32_t *reg, dmgpio_pins_mask_t
 
 static void nvic_enable_irq(uint32_t irqn)
 {
-    ((volatile uint8_t *)0xe000e400U)[irqn]=(uint8_t)dmosi_get_min_interrupt_priority();
     STM32_NVIC_ISER[irqn >> 5U] = 1U << (irqn & 0x1FU);
 }
 
@@ -406,8 +403,6 @@ dmod_dmgpio_port_api_declaration(1.0, int, _read_alternate_function,
     return -1;
 }
 
-static uint8_t exti_owner[16]; /* port + 1, zero = unclaimed */
-
 dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t trigger ))
 {
@@ -416,8 +411,6 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     if (trigger & (dmgpio_int_trigger_high_level | dmgpio_int_trigger_low_level))
         return -1;
 
-    for (unsigned i = 0; i < 16; ++i)
-        if ((pins & (1U << i)) && exti_owner[i] && exti_owner[i] != port + 1) return -16;
     volatile stm32_exti_t *exti = STM32_EXTI;
 
     for (int pin = 0; pin < 16; pin++)
@@ -431,10 +424,7 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
             exti->IMR  &= ~pin_mask;
             exti->RTSR &= ~pin_mask;
             exti->FTSR &= ~pin_mask;
-            exti_owner[pin] = 0;
-            exti->PR = pin_mask;
-            uint32_t group = pin < 5 ? pin_mask : (pin < 10 ? 0x3e0U : 0xfc00U);
-            if (!(exti->IMR & group)) nvic_disable_irq(exti_pin_to_irqn(pin));
+            nvic_disable_irq(exti_pin_to_irqn(pin));
         }
         else
         {
@@ -462,8 +452,6 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
             else
                 exti->FTSR &= ~pin_mask;
 
-            exti_owner[pin] = port + 1;
-            exti->PR = pin_mask;
             exti->IMR |= pin_mask;
             nvic_enable_irq(exti_pin_to_irqn(pin));
         }
@@ -508,17 +496,6 @@ dmod_dmgpio_port_api_declaration(1.0, int, _read_interrupt_trigger,
 /* ======================================================================
  *  Pin usage tracking
  * ====================================================================== */
-
-dmod_dmgpio_port_api_declaration(1.0, int, _claim_pins,
-    (dmgpio_port_t port, dmgpio_pins_mask_t pins))
-{
-    if (!is_valid_port(port) || !pins) return -1;
-    Dmod_EnterCritical();
-    int result = (s_pins_used[port] & pins) ? -16 : 0;
-    if (!result) s_pins_used[port] |= pins;
-    Dmod_ExitCritical();
-    return result;
-}
 
 dmod_dmgpio_port_api_declaration(1.0, int, _set_pins_used,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins ))
