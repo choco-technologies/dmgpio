@@ -94,6 +94,7 @@ set(DMOD_DMR_PATH           ${CMAKE_CURRENT_SOURCE_DIR}/dmgpio.dmr)
 dmod_add_library(${DMOD_MODULE_NAME} ${DMOD_MODULE_VERSION}
     # List of source files - can include C and C++ files
     src/dmgpio.c
+    src/dmgpio_lease.c
 )
 
 dmod_link_modules(${DMOD_MODULE_NAME}
