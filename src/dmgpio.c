@@ -583,7 +583,7 @@ int dmod_deinit(void)
 }
 
 /* ---- DMDRVI interface ---- */
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, dmdrvi_context_t, _create,
     ( dmini_context_t config, dmdrvi_dev_num_t* dev_num ))
 {
     dmdrvi_context_t ctx = (dmdrvi_context_t)Dmod_Malloc(sizeof(struct dmdrvi_context));
@@ -678,7 +678,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, dmdrvi_context_t, _create,
     return ctx;
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t context ))
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, void, _free, ( dmdrvi_context_t context ))
 {
     if (is_valid_context(context))
     {
@@ -690,9 +690,12 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _free, ( dmdrvi_context_t con
     }
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void*, _open,
-    ( dmdrvi_context_t context, int flags ))
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, void*, _open,
+    ( dmdrvi_context_t context, int flags, const dmdrvi_dev_num_t* dev_num ))
 {
+    (void)flags;
+    (void)dev_num; // dmgpio exposes a single device per context
+
     if (!is_valid_context(context))
     {
         DMOD_LOG_ERROR("Invalid DMDRVI context in dmgpio_dmdrvi_open\n");
@@ -701,7 +704,7 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void*, _open,
     return context;
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, void, _close,
     ( dmdrvi_context_t context, void* handle ))
 {
     /* No action needed */
@@ -712,13 +715,30 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, void, _close,
  *
  * The device is modelled as a 6-byte virtual file whose content is always
  * the current high-state bitmask formatted as "0x%04X" (e.g. "0x000A").
- * @p offset is a byte offset into that content, enabling standard
- * pread()-style access.  A @p offset at or beyond the content length
- * returns 0 bytes (EOF), which is how tools like `cat` detect end-of-file.
+ * @p offset is a non-negative byte offset into that content, enabling
+ * standard pread()-style access.  An @p offset at or beyond the content
+ * length returns 0 bytes (EOF), which is how tools like `cat` detect
+ * end-of-file.
+ *
+ * @param size Number of bytes to read; values greater than INT64_MAX must
+ * fail with -EOVERFLOW because they cannot be represented by dmdrvi_ssize_t
+ * @param offset Non-negative byte offset from the beginning of the content
+ *
+ * @return dmdrvi_ssize_t Number of bytes read, zero at EOF, or a negative
+ * errno-compatible error
  */
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
-    ( dmdrvi_context_t context, void* handle, void* buffer, size_t size, uint32_t offset ))
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, dmdrvi_ssize_t, _read,
+    ( dmdrvi_context_t context, void* handle, void* buffer, size_t size, dmdrvi_offset_t offset ))
 {
+    if (offset < 0)
+    {
+        return -EINVAL;
+    }
+    if (size > (size_t)INT64_MAX)
+    {
+        return -EOVERFLOW;
+    }
+
     if (!is_valid_context(context) || buffer == NULL)
         return 0;
 
@@ -736,14 +756,14 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
         return 0;
 
     /* Return 0 (EOF) when the offset is at or beyond the end of the content */
-    if (offset >= (uint32_t)content_len)
+    if (offset >= (dmdrvi_offset_t)content_len)
         return 0;
 
     /* Both values are non-negative and offset < content_len, so the subtraction is safe */
-    size_t available = (size_t)((uint32_t)content_len - offset);
+    size_t available = (size_t)((dmdrvi_size_t)content_len - (dmdrvi_size_t)offset);
     size_t to_copy   = (available < size) ? available : size;
     memcpy(buffer, content + offset, to_copy);
-    return to_copy;
+    return (dmdrvi_ssize_t)to_copy;
 }
 
 /**
@@ -752,12 +772,29 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _read,
  *        (e.g. appended by the shell's `echo`) are silently stripped.
  *
  * @p offset is not meaningful for GPIO (the state is a single atomic value) and
- * is ignored.
+ * is ignored, aside from being validated for non-negativity.
+ *
+ * @param size Number of bytes to write; values greater than INT64_MAX must
+ * fail with -EOVERFLOW because they cannot be represented by dmdrvi_ssize_t
+ * @param offset Non-negative byte offset (ignored otherwise)
+ *
+ * @return dmdrvi_ssize_t Number of bytes written, or a negative
+ * errno-compatible error
  */
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
-    ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size, uint32_t offset ))
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, dmdrvi_ssize_t, _write,
+    ( dmdrvi_context_t context, void* handle, const void* buffer, size_t size, dmdrvi_offset_t offset ))
 {
-    (void)offset; /* GPIO state is a single atomic value; byte offset is not applicable */
+    /* GPIO state is a single atomic value; byte offset is not applicable
+     * beyond the non-negativity check below. */
+
+    if (offset < 0)
+    {
+        return -EINVAL;
+    }
+    if (size > (size_t)INT64_MAX)
+    {
+        return -EOVERFLOW;
+    }
 
     if (!is_valid_context(context) || buffer == NULL || size == 0)
         return 0;
@@ -797,10 +834,10 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, size_t, _write,
 
     dmgpio_port_write_data(context->config.port, context->config.pins,
         (dmgpio_pins_mask_t)val);
-    return size;
+    return (dmdrvi_ssize_t)size;
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _ioctl,
     ( dmdrvi_context_t context, void* handle, int command, void* arg ))
 {
     if (!is_valid_context(context))
@@ -846,13 +883,13 @@ dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _ioctl,
     }
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _flush,
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _flush,
     ( dmdrvi_context_t context, void* handle ))
 {
     return 0;
 }
 
-dmod_dmdrvi_dif_api_declaration(1.0, dmgpio, int, _stat,
+dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _stat,
     ( dmdrvi_context_t context, const char *path, dmdrvi_stat_t* stat ))
 {
     if (!is_valid_context(context) || stat == NULL)
