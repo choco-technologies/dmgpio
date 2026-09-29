@@ -64,8 +64,8 @@ IOCTL command codes for `dmgpio_dmdrvi_ioctl`, numbered from
 for driver-specific commands. Everything below it is a standard dmdrvi
 command (network, block, monitor) that dmgpio does not implement.
 
-> Up to dmgpio 1.x the commands were numbered from 0. Modules that send
-> dmgpio ioctls must be rebuilt against dmgpio 2.0.
+> Up to dmgpio 1.0 the commands were numbered from 0. Modules that send
+> dmgpio ioctls must be rebuilt against dmgpio 1.1 or later.
 
 ```c
 typedef enum
