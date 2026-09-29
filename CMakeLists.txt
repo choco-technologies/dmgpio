@@ -96,8 +96,9 @@ dmod_add_library(${DMOD_MODULE_NAME} ${DMOD_MODULE_VERSION}
     src/dmgpio.c
 )
 
+# dmdrvi >= 2.0: DMDRVI_IOCTL_CUSTOM_BASE, the base of dmgpio_ioctl_cmd_t
 dmod_link_modules(${DMOD_MODULE_NAME}
-    dmdrvi
+    dmdrvi@>=2.0
     dmini
     dmhaman
 )

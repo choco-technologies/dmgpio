@@ -59,12 +59,18 @@ typedef enum
 
 ### `dmgpio_ioctl_cmd_t`
 
-IOCTL command codes for `dmgpio_dmdrvi_ioctl`.
+IOCTL command codes for `dmgpio_dmdrvi_ioctl`, numbered from
+`DMDRVI_IOCTL_CUSTOM_BASE` (0x1000, dmdrvi 2.0) - the range dmdrvi reserves
+for driver-specific commands. Everything below it is a standard dmdrvi
+command (network, block, monitor) that dmgpio does not implement.
+
+> Up to dmgpio 1.x the commands were numbered from 0. Modules that send
+> dmgpio ioctls must be rebuilt against dmgpio 2.0.
 
 ```c
 typedef enum
 {
-    dmgpio_ioctl_cmd_toggle_pins,               // Toggle pins state (arg = NULL)
+    dmgpio_ioctl_cmd_toggle_pins = DMDRVI_IOCTL_CUSTOM_BASE,   // Toggle pins state (arg = NULL)
     dmgpio_ioctl_cmd_set_pins_state,            // arg = const dmgpio_pins_state_t*
     dmgpio_ioctl_cmd_get_high_pins_state,       // arg = dmgpio_pins_mask_t* - pins in high state
     dmgpio_ioctl_cmd_get_low_pins_state,        // arg = dmgpio_pins_mask_t* - pins in low state

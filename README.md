@@ -68,12 +68,15 @@ dmdrvi_context_t gpio_ctx = dmgpio_dmdrvi_create(config, &dev_num);
 // Open and use the GPIO device
 void* handle = dmgpio_dmdrvi_open(gpio_ctx, DMDRVI_O_RDWR);
 
-// Set pin high
-dmgpio_pin_state_t state = dmgpio_pin_set;
-dmgpio_dmdrvi_ioctl(gpio_ctx, handle, dmgpio_ioctl_cmd_set_state, &state);
+// Set the pins high
+dmgpio_pins_state_t state = dmgpio_pins_state_all_high;
+dmgpio_dmdrvi_ioctl(gpio_ctx, handle, dmgpio_ioctl_cmd_set_pins_state, &state);
 
-// Toggle the pin
-dmgpio_dmdrvi_ioctl(gpio_ctx, handle, dmgpio_ioctl_cmd_toggle, NULL);
+// Toggle the pins
+dmgpio_dmdrvi_ioctl(gpio_ctx, handle, dmgpio_ioctl_cmd_toggle_pins, NULL);
+
+// dmgpio_ioctl_cmd_t starts at DMDRVI_IOCTL_CUSTOM_BASE; any other command
+// (e.g. the dmdrvi block/monitor probes) returns -ENOTTY.
 
 // Cleanup
 dmgpio_dmdrvi_close(gpio_ctx, handle);

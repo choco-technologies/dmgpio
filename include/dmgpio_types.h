@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "dmdrvi_ioctl.h"
 
 /**
  * @brief GPIO port index type (0=GPIOA, 1=GPIOB, ...)
@@ -108,10 +109,15 @@ typedef enum
 
 /**
  * @brief IOCTL commands for DMGPIO device
+ *
+ * Numbered from DMDRVI_IOCTL_CUSTOM_BASE, the range dmdrvi reserves for
+ * driver-specific commands: below it are the standard commands (network
+ * 0x01.., block 0x100.., monitor 0x200..) that dmdevfs and other generic
+ * code may send to any node, and which dmgpio must answer with -ENOTTY.
  */
 typedef enum
 {
-    dmgpio_ioctl_cmd_toggle_pins,               /**< Toggle pins state */
+    dmgpio_ioctl_cmd_toggle_pins = DMDRVI_IOCTL_CUSTOM_BASE,    /**< Toggle pins state */
     dmgpio_ioctl_cmd_set_pins_state,            /**< Set new pins state */
     dmgpio_ioctl_cmd_get_high_pins_state,       /**< Read pins that are in high state */
     dmgpio_ioctl_cmd_get_low_pins_state,        /**< Read pins that are in low state */
