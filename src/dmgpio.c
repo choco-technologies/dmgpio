@@ -837,6 +837,17 @@ dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, dmdrvi_ssize_t, _write,
     return (dmdrvi_ssize_t)size;
 }
 
+/**
+ * @brief dmdrvi ioctl: dmgpio_ioctl_cmd_t commands
+ *
+ * The switch is on the int @p command, never on it cast to
+ * dmgpio_ioctl_cmd_t: arm-none-eabi uses short enums, so the cast keeps only
+ * the low byte and turns e.g. DMDRVI_IOCTL_BLOCK_GET_INFO (0x100) or
+ * DMDRVI_IOCTL_MONITOR_GET_POLICY (0x200) into dmgpio_ioctl_cmd_toggle_pins.
+ *
+ * Any other command - such as the class probes dmdevfs sends to every node -
+ * is not implemented: -ENOTTY, as dmdrvi requires, and nothing is logged.
+ */
 dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _ioctl,
     ( dmdrvi_context_t context, void* handle, int command, void* arg ))
 {
@@ -846,7 +857,7 @@ dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _ioctl,
         return -EINVAL;
     }
 
-    switch ((dmgpio_ioctl_cmd_t)command)
+    switch (command)
     {
         case dmgpio_ioctl_cmd_toggle_pins:
             dmgpio_port_toggle_pins_state(context->config.port, context->config.pins);
@@ -878,8 +889,7 @@ dmod_dmdrvi_dif_api_declaration(2.0, dmgpio, int, _ioctl,
                 context);
 
         default:
-            DMOD_LOG_ERROR("Unknown ioctl command %d\n", command);
-            return -EINVAL;
+            return -ENOTTY;
     }
 }
 
