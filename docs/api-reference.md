@@ -59,22 +59,22 @@ typedef enum
 
 ### `dmgpio_ioctl_cmd_t`
 
-IOCTL command codes for `dmgpio_dmdrvi_ioctl`.
+IOCTL command codes for `dmgpio_dmdrvi_ioctl`, numbered from
+`DMDRVI_IOCTL_CUSTOM_BASE` (0x1000, dmdrvi 2.0) - the range dmdrvi reserves
+for driver-specific commands. Everything below it is a standard dmdrvi
+command (network, block, monitor) that dmgpio does not implement.
+
+> Up to dmgpio 1.x the commands were numbered from 0. Modules that send
+> dmgpio ioctls must be rebuilt against dmgpio 2.0.
 
 ```c
 typedef enum
 {
-    dmgpio_ioctl_cmd_get_state = 1, // Read current pin state -> dmgpio_pin_state_t*
-    dmgpio_ioctl_cmd_set_state,     // Write pin state <- dmgpio_pin_state_t*
-    dmgpio_ioctl_cmd_toggle,        // Toggle pin (arg = NULL)
-    dmgpio_ioctl_cmd_get_mode,      // Read pin mode -> dmgpio_mode_t*
-    dmgpio_ioctl_cmd_set_mode,      // Write pin mode <- dmgpio_mode_t*
-    dmgpio_ioctl_cmd_get_pull,      // Read pull config -> dmgpio_pull_t*
-    dmgpio_ioctl_cmd_set_pull,      // Write pull config <- dmgpio_pull_t*
-    dmgpio_ioctl_cmd_get_speed,     // Read output speed -> dmgpio_speed_t*
-    dmgpio_ioctl_cmd_set_speed,     // Write output speed <- dmgpio_speed_t*
-    dmgpio_ioctl_cmd_reconfigure,   // Reapply current configuration (arg = NULL)
-    dmgpio_ioctl_cmd_max
+    dmgpio_ioctl_cmd_toggle_pins = DMDRVI_IOCTL_CUSTOM_BASE,   // Toggle pins state (arg = NULL)
+    dmgpio_ioctl_cmd_set_pins_state,            // arg = const dmgpio_pins_state_t*
+    dmgpio_ioctl_cmd_get_high_pins_state,       // arg = dmgpio_pins_mask_t* - pins in high state
+    dmgpio_ioctl_cmd_get_low_pins_state,        // arg = dmgpio_pins_mask_t* - pins in low state
+    dmgpio_ioctl_cmd_set_interrupt_handler      // arg = dmgpio_interrupt_handler_t*
 } dmgpio_ioctl_cmd_t;
 ```
 
@@ -179,7 +179,11 @@ int dmgpio_dmdrvi_ioctl(dmdrvi_context_t context, void* handle, int command, voi
 - `command` – IOCTL command from `dmgpio_ioctl_cmd_t`
 - `arg` – Command-specific argument (see command descriptions above)
 
-**Returns:** 0 on success, negative errno on failure.
+**Returns:** 0 on success, `-EINVAL` for a missing `arg`, `-ENOTTY` for any
+command that is not a `dmgpio_ioctl_cmd_t` - for example the dmdrvi class
+probes (`DMDRVI_IOCTL_BLOCK_GET_INFO`, `DMDRVI_IOCTL_MONITOR_GET_POLICY`)
+dmdevfs sends to every node, so GPIO nodes are never reported as block or
+monitor devices. Unknown commands are not logged.
 
 ---
 

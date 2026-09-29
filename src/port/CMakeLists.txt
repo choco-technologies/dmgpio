@@ -45,3 +45,9 @@ target_include_directories(${DMOD_MODULE_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# dmgpio_types.h (included by dmgpio_port.h) numbers the ioctl commands from
+# dmdrvi's DMDRVI_IOCTL_CUSTOM_BASE - headers only, nothing is called.
+dmod_link_modules(${DMOD_MODULE_NAME}
+    dmdrvi@>=2.0
+)
