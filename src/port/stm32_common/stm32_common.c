@@ -1,10 +1,17 @@
 #include "stm32_common.h"
+#include "dmod.h"
+#include "dmosi.h"
 #include <stddef.h>
 
 /* ---- Software state ---- */
 
 /** Bitmask of pins currently in use, indexed by port number. */
 static dmgpio_pins_mask_t s_pins_used[STM32_MAX_PORTS] = {0};
+
+/** Port owning each EXTI line, plus one (0 = line free). An EXTI line serves
+ *  the same pin number of one port only (SYSCFG_EXTICR selects which), so a
+ *  second port asking for it must be refused instead of silently remapped. */
+static uint8_t s_exti_owner[STM32_EXTI_GPIO_LINES] = {0};
 
 /** Maximum number of interrupt handlers that can be registered per port.
  *  Each dmgpio context that uses interrupts on a given port occupies one slot.
@@ -74,6 +81,11 @@ static uint32_t read_2bit_field(volatile const uint32_t *reg, dmgpio_pins_mask_t
 
 static void nvic_enable_irq(uint32_t irqn)
 {
+    /* Interrupt handlers dispatched through dmhaman may call ISR-safe RTOS
+     * APIs (e.g. post a dmosi semaphore). FreeRTOS only allows that at or
+     * below configMAX_SYSCALL_INTERRUPT_PRIORITY - the reset priority 0 is
+     * above it and trips configASSERT in vPortValidateInterruptPriority(). */
+    STM32_NVIC_IP[irqn] = (uint8_t)dmosi_get_min_interrupt_priority();
     STM32_NVIC_ISER[irqn >> 5U] = 1U << (irqn & 0x1FU);
 }
 
@@ -403,6 +415,86 @@ dmod_dmgpio_port_api_declaration(1.0, int, _read_alternate_function,
     return -1;
 }
 
+/** True while any EXTI line served by @p irqn is enabled. */
+static bool exti_irq_in_use(uint32_t irqn)
+{
+    for (int pin = 0; pin < (int)STM32_EXTI_GPIO_LINES; pin++)
+    {
+        if (exti_pin_to_irqn(pin) == irqn && (STM32_EXTI->IMR & (1U << (uint32_t)pin)))
+            return true;
+    }
+    return false;
+}
+
+/** True if @p port may configure the EXTI line of every pin in @p pins. */
+static bool exti_lines_available(dmgpio_port_t port, dmgpio_pins_mask_t pins)
+{
+    for (int pin = 0; pin < (int)STM32_EXTI_GPIO_LINES; pin++)
+    {
+        uint8_t owner = s_exti_owner[pin];
+        if ((pins & (dmgpio_pins_mask_t)(1U << pin)) && owner != 0U && owner != (uint8_t)(port + 1U))
+        {
+            DMOD_LOG_ERROR("EXTI line %d is already used by port %c, cannot route it to port %c\n",
+                pin, 'A' + (owner - 1U), 'A' + port);
+            return false;
+        }
+    }
+    return true;
+}
+
+/** Disable one EXTI line - only if @p port owns it, never another port's. */
+static void exti_disable(dmgpio_port_t port, int pin)
+{
+    uint32_t pin_mask = 1U << (uint32_t)pin;
+    if (s_exti_owner[pin] != (uint8_t)(port + 1U))
+        return;
+
+    STM32_EXTI->IMR  &= ~pin_mask;
+    STM32_EXTI->RTSR &= ~pin_mask;
+    STM32_EXTI->FTSR &= ~pin_mask;
+    s_exti_owner[pin] = 0U;
+
+    /* EXTI5-9 and EXTI10-15 share an IRQ: keep it while other lines need it. */
+    uint32_t irqn = exti_pin_to_irqn(pin);
+    if (!exti_irq_in_use(irqn))
+        nvic_disable_irq(irqn);
+}
+
+/** Route one EXTI line to @p port and enable it with the given edges. */
+static void exti_enable(dmgpio_port_t port, int pin, dmgpio_int_trigger_t trigger)
+{
+    volatile stm32_exti_t *exti = STM32_EXTI;
+    uint32_t pin_mask = 1U << (uint32_t)pin;
+
+    /* Enable the SYSCFG peripheral clock before accessing its registers.
+     * This is required on real STM32 hardware (APB2 clock gate) and must
+     * also be done before any Renode SYSCFG model access.  A read-back
+     * barrier is added so the write completes before EXTICR is touched. */
+    STM32_RCC_APB2ENR |= STM32_RCC_APB2ENR_SYSCFGEN;
+    (void)STM32_RCC_APB2ENR;
+
+    /* Map GPIO port to EXTI line via SYSCFG_EXTICR. */
+    uint32_t exticr_idx   = (uint32_t)pin / 4U;
+    uint32_t exticr_shift = ((uint32_t)pin % 4U) * 4U;
+    STM32_SYSCFG_EXTICR[exticr_idx] =
+        (STM32_SYSCFG_EXTICR[exticr_idx] & ~(0xFU << exticr_shift)) |
+        ((uint32_t)port << exticr_shift);
+    s_exti_owner[pin] = (uint8_t)(port + 1U);
+
+    if (trigger & dmgpio_int_trigger_rising_edge)
+        exti->RTSR |= pin_mask;
+    else
+        exti->RTSR &= ~pin_mask;
+
+    if (trigger & dmgpio_int_trigger_falling_edge)
+        exti->FTSR |= pin_mask;
+    else
+        exti->FTSR &= ~pin_mask;
+
+    exti->IMR |= pin_mask;
+    nvic_enable_irq(exti_pin_to_irqn(pin));
+}
+
 dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t trigger ))
 {
@@ -410,51 +502,18 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     /* STM32 EXTI only supports edge-sensitive triggers. */
     if (trigger & (dmgpio_int_trigger_high_level | dmgpio_int_trigger_low_level))
         return -1;
+    /* Check every line first, so a conflict changes nothing at all. */
+    if (trigger != dmgpio_int_trigger_off && !exti_lines_available(port, pins))
+        return -1;
 
-    volatile stm32_exti_t *exti = STM32_EXTI;
-
-    for (int pin = 0; pin < 16; pin++)
+    for (int pin = 0; pin < (int)STM32_EXTI_GPIO_LINES; pin++)
     {
         if (!(pins & (dmgpio_pins_mask_t)(1U << pin))) continue;
 
-        uint32_t pin_mask = 1U << (uint32_t)pin;
-
         if (trigger == dmgpio_int_trigger_off)
-        {
-            exti->IMR  &= ~pin_mask;
-            exti->RTSR &= ~pin_mask;
-            exti->FTSR &= ~pin_mask;
-            nvic_disable_irq(exti_pin_to_irqn(pin));
-        }
+            exti_disable(port, pin);
         else
-        {
-            /* Enable the SYSCFG peripheral clock before accessing its registers.
-             * This is required on real STM32 hardware (APB2 clock gate) and must
-             * also be done before any Renode SYSCFG model access.  A read-back
-             * barrier is added so the write completes before EXTICR is touched. */
-            STM32_RCC_APB2ENR |= STM32_RCC_APB2ENR_SYSCFGEN;
-            (void)STM32_RCC_APB2ENR;
-
-            /* Map GPIO port to EXTI line via SYSCFG_EXTICR. */
-            uint32_t exticr_idx   = (uint32_t)pin / 4U;
-            uint32_t exticr_shift = ((uint32_t)pin % 4U) * 4U;
-            STM32_SYSCFG_EXTICR[exticr_idx] =
-                (STM32_SYSCFG_EXTICR[exticr_idx] & ~(0xFU << exticr_shift)) |
-                ((uint32_t)port << exticr_shift);
-
-            if (trigger & dmgpio_int_trigger_rising_edge)
-                exti->RTSR |= pin_mask;
-            else
-                exti->RTSR &= ~pin_mask;
-
-            if (trigger & dmgpio_int_trigger_falling_edge)
-                exti->FTSR |= pin_mask;
-            else
-                exti->FTSR &= ~pin_mask;
-
-            exti->IMR |= pin_mask;
-            nvic_enable_irq(exti_pin_to_irqn(pin));
-        }
+            exti_enable(port, pin, trigger);
     }
     return 0;
 }
