@@ -56,6 +56,11 @@ typedef struct
 #define STM32_NVIC_ISER         ((volatile uint32_t *)0xE000E100UL)
 /** NVIC Interrupt Clear-Enable Registers */
 #define STM32_NVIC_ICER         ((volatile uint32_t *)0xE000E180UL)
+/** NVIC Interrupt Priority Registers (one byte per IRQ) */
+#define STM32_NVIC_IP           ((volatile uint8_t *)0xE000E400UL)
+
+/** Number of EXTI lines connected to GPIO pins (one per pin number) */
+#define STM32_EXTI_GPIO_LINES   16U
 
 /** Maximum number of GPIO ports supported (A=0 … K=10) */
 #define STM32_MAX_PORTS         11U

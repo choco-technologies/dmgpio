@@ -48,6 +48,9 @@ target_include_directories(${DMOD_MODULE_NAME} PRIVATE
 
 # dmgpio_types.h (included by dmgpio_port.h) numbers the ioctl commands from
 # dmdrvi's DMDRVI_IOCTL_CUSTOM_BASE - headers only, nothing is called.
+# dmosi: minimum interrupt priority for the EXTI interrupts (their handlers
+#        may call ISR-safe RTOS APIs).
 dmod_link_modules(${DMOD_MODULE_NAME}
     dmdrvi@>=2.0
+    dmosi
 )
