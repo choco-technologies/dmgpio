@@ -2,7 +2,7 @@
 # ======================================================================
 #               Parameters
 # ======================================================================
-set(DMCLK_MCU_SERIES "stm32f7" CACHE STRING "Target MCU series")
+set(DMGPIO_MCU_SERIES "stm32f7" CACHE STRING "Target MCU series")
 
 # ======================================================================
 #               dmgpio Module Configuration
@@ -24,9 +24,12 @@ set(DMOD_DMR_PATH           ${CMAKE_SOURCE_DIR}/dmgpio_port.dmr)
 
 # Determine common source files based on MCU family
 set(COMMON_SOURCES "")
-if(DMCLK_MCU_SERIES MATCHES "^stm32")
+if(DMGPIO_MCU_SERIES MATCHES "^stm32")
     # Add STM32 common implementation for all STM32 families
     set(COMMON_SOURCES stm32_common/stm32_common.c)
+endif()
+if(DMGPIO_MCU_SERIES STREQUAL "esp32s3")
+    set(COMMON_SOURCES esp32s3/esp32s3_gpio.c)
 endif()
 
 #
@@ -37,7 +40,7 @@ endif()
 #
 dmod_add_library(${DMOD_MODULE_NAME} ${DMOD_MODULE_VERSION}
     # List of source files - can include C and C++ files
-    ${DMCLK_MCU_SERIES}/port.c
+    ${DMGPIO_MCU_SERIES}/port.c
     ${COMMON_SOURCES}
 )
 
