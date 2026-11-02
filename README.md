@@ -15,7 +15,7 @@ A DMOD (Dynamic Modular System) module for configuring and managing GPIO (Genera
 - **Hardware Abstraction**: Platform-independent API with hardware-specific implementations
 - **DMDRVI Integration**: Full DMOD driver interface implementation
 - **STM32 Support**: STM32F4 and STM32F7 families currently supported
-- **ESP32-S3 Support**: GPIO matrix + IO MUX (no GPIO interrupts yet), see [docs/esp32s3.md](docs/esp32s3.md)
+- **ESP32-S3 Support**: GPIO matrix + IO MUX, edge interrupts, see [docs/esp32s3.md](docs/esp32s3.md)
 - **Extensible**: Easy to add support for additional microcontroller families
 
 ## Quick Start
@@ -134,7 +134,7 @@ dmf-man dmgpio port     # Port implementation guide
 |----------|--------|-------|
 | STM32F4  | ✅ Supported | Full GPIO configuration |
 | STM32F7  | ✅ Supported | Full GPIO configuration |
-| ESP32-S3 | ✅ Supported | Without GPIO interrupts, see [docs/esp32s3.md](docs/esp32s3.md) |
+| ESP32-S3 | ✅ Supported | Edge interrupts (no level ones), see [docs/esp32s3.md](docs/esp32s3.md) |
 | Other STM32 | 🔧 In Progress | Easy to add via register-level abstraction |
 | Other MCUs | 📋 Planned | Contributions welcome |
 

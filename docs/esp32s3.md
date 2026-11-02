@@ -28,7 +28,19 @@ into ports of 16:
 | `current=minimum` / `medium` / `maximum` | drive strength 0 / 2 / 3 (about 5 / 20 / 40 mA) |
 | `output_circuit=open_drain` | `GPIO_PINn.PAD_DRIVER` |
 | `speed=...` | not supported (`-ENOTSUP`): the pads have no slew rate setting; `default` is accepted |
-| interrupts | not supported yet (`-ENOTSUP`): the dispatcher of the interrupts of the Xtensa ports is not there |
+| `interrupt_trigger=rising_edge` / `falling_edge` / `both_edges` | `GPIO_PINn.INT_TYPE` 1 / 2 / 3 and the CPU interrupt enable of the pad. The levels are refused (`-1`), like on the STM32: the status stays set while the level does and a handler cannot take it away |
+| `interrupt_handler=name` and the handlers added in code | see below |
+
+## Interrupts
+
+All the pads share one interrupt source of the interrupt matrix (the GPIO, level type). The port routes it to the interrupt 2 of the
+CPU (level 1, so the handlers may call the RTOS from the ISR) when the first pin asks for an interrupt and takes it away with the
+last one. The module's `DMOD_IRQ_HANDLER(2)` reads the status, clears the bits of the pins that the module turned on (before the
+handlers are called, so an edge that comes while they run is kept) and calls the handlers of the port with the pins and their
+state - the same handlers as on the STM32, including the named ones of dmhaman.
+
+The firmware has to hand the interrupt 2 over to dmod (`Dmod_IrqAll(2)`): dmod-boot does that for the lines of the CPU that
+nothing else uses (`DMBOOT_IRQ_COUNT` of the Xtensa port is 32). Up to 8 handlers per port.
 
 ## Protected pins
 

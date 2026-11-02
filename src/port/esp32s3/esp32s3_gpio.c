@@ -105,21 +105,130 @@ static uint32_t iomux_read(dmgpio_port_t port, dmgpio_pins_mask_t pins, int *fou
 }
 
 /* ======================================================================
- *  Interrupts - not supported yet
+ *  Interrupts
  * ====================================================================== */
+
+/** Maximum number of interrupt handlers per port (each dmgpio context that uses interrupts on a port takes one). */
+#define ESP32S3_PORT_MAX_IRQ_HANDLERS   8U
+
+typedef struct
+{
+    dmgpio_port_interrupt_handler_t handler;
+    void                           *user_ptr;
+    dmgpio_pins_mask_t              pins;
+} irq_entry_t;
+
+static irq_entry_t s_handlers[ESP32S3_GPIO_PORTS][ESP32S3_PORT_MAX_IRQ_HANDLERS];
+/** Pins with the interrupt turned on, by port. */
+static dmgpio_pins_mask_t s_irq_pins[ESP32S3_GPIO_PORTS] = {0};
+
+static inline uint32_t intenable_read(void)
+{
+    uint32_t value;
+    __asm__ __volatile__("rsr.intenable %0" : "=a"(value));
+    return value;
+}
+
+static inline void intenable_write(uint32_t value)
+{
+    __asm__ __volatile__("wsr.intenable %0; rsync" :: "a"(value) : "memory");
+}
+
+/** Routes the interrupt of the GPIO to the CPU and turns it on when a pin needs it, turns it off when none does. */
+static void irq_line_update(void)
+{
+    int needed = 0;
+    for (uint32_t p = 0; p < ESP32S3_GPIO_PORTS; p++)
+        if (s_irq_pins[p] != 0U) needed = 1;
+
+    Dmod_EnterCritical();
+    if (needed)
+    {
+        *reg(ESP32S3_INTMTX_GPIO_MAP_REG) = ESP32S3_GPIO_CPU_INTR;
+        intenable_write(intenable_read() | (1UL << ESP32S3_GPIO_CPU_INTR));
+    }
+    else
+    {
+        intenable_write(intenable_read() & ~(1UL << ESP32S3_GPIO_CPU_INTR));
+    }
+    Dmod_ExitCritical();
+}
+
+/** The interrupt status register (and its write-1-to-clear one) of the bank of a port. */
+static inline void irq_status_clear(dmgpio_port_t port, dmgpio_pins_mask_t pins)
+{
+    *reg((port >> 1) ? ESP32S3_GPIO_STATUS1_W1TC_REG : ESP32S3_GPIO_STATUS_W1TC_REG) = (uint32_t)pins << shift_of(port);
+}
+
+static inline dmgpio_pins_mask_t irq_status_read(dmgpio_port_t port)
+{
+    return (dmgpio_pins_mask_t)(*reg((port >> 1) ? ESP32S3_GPIO_STATUS1_REG : ESP32S3_GPIO_STATUS_REG) >> shift_of(port));
+}
+
+void esp32s3_gpio_irq_handler(void)
+{
+    for (dmgpio_port_t port = 0; port < ESP32S3_GPIO_PORTS; port++)
+    {
+        /* Only the pins that this module turned on: the status of the others is not ours to clear */
+        dmgpio_pins_mask_t pending = irq_status_read(port) & s_irq_pins[port];
+        if (pending == 0U) continue;
+
+        irq_status_clear(port, pending);        /* before the handlers: an edge that comes during them is kept */
+        dmgpio_pins_mask_t state = (dmgpio_pins_mask_t)((*reg(bank_of(port)->in) >> shift_of(port)) & pending);
+        for (uint32_t i = 0; i < ESP32S3_PORT_MAX_IRQ_HANDLERS; i++)
+        {
+            dmgpio_pins_mask_t match = s_handlers[port][i].pins & pending;
+            if (s_handlers[port][i].handler != NULL && match != 0U)
+                s_handlers[port][i].handler(s_handlers[port][i].user_ptr, port, match, state);
+        }
+    }
+}
+
+void esp32s3_gpio_irq_shutdown(void)
+{
+    for (dmgpio_port_t port = 0; port < ESP32S3_GPIO_PORTS; port++)
+    {
+        for (int pin = 0; pin < 16; pin++)
+        {
+            if (!(s_irq_pins[port] & (dmgpio_pins_mask_t)(1U << pin))) continue;
+            volatile uint32_t *r = reg(ESP32S3_GPIO_PIN_REG(pad_of(port, pin)));
+            *r &= ~(ESP32S3_GPIO_PIN_INT_TYPE_M | ESP32S3_GPIO_PIN_INT_ENA_CPU);
+        }
+        irq_status_clear(port, s_irq_pins[port]);
+        s_irq_pins[port] = 0U;
+        for (uint32_t i = 0; i < ESP32S3_PORT_MAX_IRQ_HANDLERS; i++)
+            s_handlers[port][i].handler = NULL;
+    }
+    irq_line_update();
+}
 
 dmod_dmgpio_port_api_declaration(1.0, int, _add_interrupt_handler,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_port_interrupt_handler_t handler, void *user_ptr ))
 {
-    (void)port; (void)pins; (void)handler; (void)user_ptr;
-    return -ENOTSUP;
+    if (!is_valid_port(port) || handler == NULL) return -1;
+    for (uint32_t i = 0; i < ESP32S3_PORT_MAX_IRQ_HANDLERS; i++)
+    {
+        if (s_handlers[port][i].handler == NULL)
+        {
+            s_handlers[port][i].user_ptr = user_ptr;
+            s_handlers[port][i].pins     = pins;
+            s_handlers[port][i].handler  = handler;     /* last: the interrupt sees a complete entry */
+            return 0;
+        }
+    }
+    return -1;
 }
 
 dmod_dmgpio_port_api_declaration(1.0, int, _remove_interrupt_handler,
     ( dmgpio_port_t port, void *user_ptr ))
 {
-    (void)user_ptr;
-    return is_valid_port(port) ? 0 : -1;    /* there is nothing registered */
+    if (!is_valid_port(port)) return -1;
+    for (uint32_t i = 0; i < ESP32S3_PORT_MAX_IRQ_HANDLERS; i++)
+    {
+        if (s_handlers[port][i].handler != NULL && s_handlers[port][i].user_ptr == user_ptr)
+            s_handlers[port][i].handler = NULL;
+    }
+    return 0;
 }
 
 /* ======================================================================
@@ -364,15 +473,70 @@ dmod_dmgpio_port_api_declaration(1.0, int, _set_interrupt_trigger,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t trigger ))
 {
     if (check_pins(port, pins) != 0) return -1;
-    return trigger == dmgpio_int_trigger_off ? 0 : -ENOTSUP;
+    uint32_t type;
+    switch (trigger)
+    {
+        case dmgpio_int_trigger_off:          type = 0U; break;
+        case dmgpio_int_trigger_rising_edge:  type = 1U; break;
+        case dmgpio_int_trigger_falling_edge: type = 2U; break;
+        case dmgpio_int_trigger_both_edges:   type = 3U; break;
+        /* The levels are refused like on the STM32: the status stays set while the level does, and the handler of a pin cannot
+         * take the level away - the interrupt would come again at once and starve everything else. */
+        default:                              return -1;
+    }
+
+    for (int pin = 0; pin < 16; pin++)
+    {
+        if (!(pins & (dmgpio_pins_mask_t)(1U << pin))) continue;
+        volatile uint32_t *r = reg(ESP32S3_GPIO_PIN_REG(pad_of(port, pin)));
+        uint32_t v = *r & ~(ESP32S3_GPIO_PIN_INT_TYPE_M | ESP32S3_GPIO_PIN_INT_ENA_CPU);
+        if (type == 0U)
+        {
+            *r = v;
+        }
+        else
+        {
+            *r = v | (type << ESP32S3_GPIO_PIN_INT_TYPE_S);
+        }
+    }
+
+    dmgpio_pins_mask_t one = (dmgpio_pins_mask_t)(pins & s_valid_pins[port]);
+    irq_status_clear(port, one);                /* an edge from before is not an interrupt of the new setting */
+    if (type == 0U)
+    {
+        s_irq_pins[port] &= (dmgpio_pins_mask_t)~one;
+    }
+    else
+    {
+        s_irq_pins[port] |= one;
+        for (int pin = 0; pin < 16; pin++)
+        {
+            if (one & (dmgpio_pins_mask_t)(1U << pin))
+                *reg(ESP32S3_GPIO_PIN_REG(pad_of(port, pin))) |= ESP32S3_GPIO_PIN_INT_ENA_CPU;
+        }
+    }
+    irq_line_update();
+    return 0;
 }
 
 dmod_dmgpio_port_api_declaration(1.0, int, _read_interrupt_trigger,
     ( dmgpio_port_t port, dmgpio_pins_mask_t pins, dmgpio_int_trigger_t *out_trigger ))
 {
-    if (check_pins(port, pins) != 0 || out_trigger == NULL) return -1;
-    *out_trigger = dmgpio_int_trigger_off;
-    return 0;
+    if (check_pins(port, pins) != 0 || out_trigger == NULL || pins == 0U) return -1;
+    /* Read from the lowest selected pin */
+    for (int pin = 0; pin < 16; pin++)
+    {
+        if (!(pins & (dmgpio_pins_mask_t)(1U << pin))) continue;
+        uint32_t v = *reg(ESP32S3_GPIO_PIN_REG(pad_of(port, pin)));
+        uint32_t type = (v & ESP32S3_GPIO_PIN_INT_TYPE_M) >> ESP32S3_GPIO_PIN_INT_TYPE_S;
+        if (!(v & ESP32S3_GPIO_PIN_INT_ENA_CPU)) type = 0U;
+        *out_trigger = type == 1U ? dmgpio_int_trigger_rising_edge
+                     : type == 2U ? dmgpio_int_trigger_falling_edge
+                     : type == 3U ? dmgpio_int_trigger_both_edges
+                     : dmgpio_int_trigger_off;
+        return 0;
+    }
+    return -1;
 }
 
 /* ======================================================================
