@@ -31,6 +31,8 @@ struct dmdrvi_context
     uint32_t        magic;  /**< Magic number for validation */
     dmgpio_config_t config; /**< GPIO configuration */
     char           *interrupt_handler_name; /**< dmhaman handler name (NULL = not used) */
+    bool            initial_state_set;      /**< The configuration gives the level of an output at the start (key `state`) */
+    dmgpio_pins_state_t initial_state;      /**< That level */
 };
 
 static int is_valid_context(dmdrvi_context_t context)
@@ -435,6 +437,22 @@ static int read_config_parameters(dmdrvi_context_t ctx, dmini_context_t ini)
         ctx->config.alternate_function = 0;
     }
 
+    /* The level of an output at the start: set before the pin becomes an output, so it never shows the other one */
+    const char *state_str = dmini_get_string(ini, section, "state", NULL);
+    if (state_str != NULL)
+    {
+        if (strcmp(state_str, "high") == 0 || strcmp(state_str, "1") == 0)
+            ctx->initial_state = dmgpio_pins_state_all_high;
+        else if (strcmp(state_str, "low") == 0 || strcmp(state_str, "0") == 0)
+            ctx->initial_state = dmgpio_pins_state_all_low;
+        else
+        {
+            DMOD_LOG_ERROR("Invalid 'state' in [%s] config (expected high or low)\n", section);
+            return -EINVAL;
+        }
+        ctx->initial_state_set = true;
+    }
+
     const char *handler_name = dmini_get_string(ini, section, "interrupt_handler", NULL);
     ctx->interrupt_handler_name = (handler_name != NULL) ? Dmod_StrDup(handler_name) : NULL;
 
@@ -471,6 +489,9 @@ static int configure(dmdrvi_context_t ctx)
             return ret;
         }
     }
+
+    if (c->mode == dmgpio_mode_output && ctx->initial_state_set)
+        dmgpio_port_set_pins_state(c->port, c->pins, ctx->initial_state);
 
     ret = dmgpio_port_set_mode(c->port, c->pins, c->mode);
     if (ret != 0)

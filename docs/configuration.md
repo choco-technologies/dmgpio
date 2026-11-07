@@ -106,6 +106,19 @@ Alternate function number (0–15). Used when `mode` is `alternate`. This is the
 
 ---
 
+### `state`
+
+The level of an output at the start (`mode=output` only; ignored otherwise). It is set before the pin becomes an output, so the pin never shows the other level - a chip select comes up deselected, a power enable comes up on. Without it the level is whatever the output register of the port held.
+
+| Value | Description |
+|-------|-------------|
+| `high` or `1` | The pins start high |
+| `low` or `0` | The pins start low |
+
+**Example:** `state=high`
+
+---
+
 ### `interrupt_handler`
 
 Name of a [dmhaman](https://github.com/choco-technologies/dmhaman)-registered handler to call when an interrupt fires on this pin.  When set, the driver registers an internal wrapper that calls `dmhaman_call_handler(name, &params)` on every interrupt.  The `params` argument is a `dmgpio_interrupt_params_t` struct containing `port`, `pins`, and `state`.
